@@ -1,0 +1,310 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- ========================================
+       🦁 LOGO LEÃO REALISTA - MILIONÁRIOS DA LEOGRAF
+       ========================================
+       
+       Estrutura:
+       1. Fundo com gradiente radial
+       2. Juba volumosa com múltiplas camadas
+       3. Face do leão com sombras
+       4. Detalhes anatômicos realistas
+       5. Trevos decorativos
+       ======================================== -->
+  
+  <defs>
+    <!-- Gradiente do fundo -->
+    <radialGradient id="bgGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#2a5298"/>
+      <stop offset="100%" style="stop-color:#0c1445"/>
+    </radialGradient>
+    
+    <!-- Gradiente da juba (dourado realista) -->
+    <linearGradient id="maneGradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#D4A574"/>
+      <stop offset="25%" style="stop-color:#C4956A"/>
+      <stop offset="50%" style="stop-color:#8B5A2B"/>
+      <stop offset="75%" style="stop-color:#A0522D"/>
+      <stop offset="100%" style="stop-color:#6B3E26"/>
+    </linearGradient>
+    
+    <linearGradient id="maneGradient2" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#CD853F"/>
+      <stop offset="50%" style="stop-color:#DAA520"/>
+      <stop offset="100%" style="stop-color:#B8860B"/>
+    </linearGradient>
+    
+    <!-- Gradiente da face -->
+    <radialGradient id="faceGradient" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" style="stop-color:#E8C89E"/>
+      <stop offset="40%" style="stop-color:#D4A574"/>
+      <stop offset="80%" style="stop-color:#C49A6C"/>
+      <stop offset="100%" style="stop-color:#A0522D"/>
+    </radialGradient>
+    
+    <!-- Gradiente do focinho -->
+    <radialGradient id="snoutGradient" cx="50%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#F5DEB3"/>
+      <stop offset="60%" style="stop-color:#E8C89E"/>
+      <stop offset="100%" style="stop-color:#D2B48C"/>
+    </radialGradient>
+    
+    <!-- Gradiente do nariz -->
+    <radialGradient id="noseGradient" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" style="stop-color:#4A4A4A"/>
+      <stop offset="50%" style="stop-color:#2C2C2C"/>
+      <stop offset="100%" style="stop-color:#1A1A1A"/>
+    </radialGradient>
+    
+    <!-- Gradiente dos olhos -->
+    <radialGradient id="eyeGradient" cx="40%" cy="40%" r="60%">
+      <stop offset="0%" style="stop-color:#D4A017"/>
+      <stop offset="50%" style="stop-color:#996515"/>
+      <stop offset="100%" style="stop-color:#5C4033"/>
+    </radialGradient>
+    
+    <!-- Gradiente do trevo -->
+    <linearGradient id="cloverGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#50C878"/>
+      <stop offset="50%" style="stop-color:#2E8B57"/>
+      <stop offset="100%" style="stop-color:#1E5631"/>
+    </linearGradient>
+    
+    <!-- Filtro de sombra -->
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+    
+    <!-- Filtro de brilho -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- FUNDO -->
+  <circle cx="256" cy="256" r="256" fill="url(#bgGradient)"/>
+  
+  <!-- ═══════════════════════════════════════
+       JUBA - Camada externa (mais escura)
+       ═══════════════════════════════════════ -->
+  <g filter="url(#shadow)">
+    <!-- Juba traseira (camada mais externa) -->
+    <ellipse cx="256" cy="270" rx="200" ry="180" fill="#5D3A1A" opacity="0.8"/>
+    
+    <!-- Mechas da juba - superior -->
+    <path d="M 256 90 Q 180 100 140 160 Q 120 200 130 250 L 160 220 Q 170 170 200 140 Q 230 120 256 110 Q 282 120 312 140 Q 342 170 352 220 L 382 250 Q 392 200 372 160 Q 332 100 256 90" 
+          fill="url(#maneGradient1)"/>
+    
+    <!-- Mechas laterais esquerdas -->
+    <path d="M 130 250 Q 80 280 70 340 Q 65 400 100 440 L 130 400 Q 100 360 105 310 Q 110 270 130 250" 
+          fill="url(#maneGradient1)"/>
+    <path d="M 100 440 Q 120 480 180 490 L 170 450 Q 130 445 100 440" 
+          fill="#8B4513"/>
+    
+    <!-- Mechas laterais direitas -->
+    <path d="M 382 250 Q 432 280 442 340 Q 447 400 412 440 L 382 400 Q 412 360 407 310 Q 402 270 382 250" 
+          fill="url(#maneGradient1)"/>
+    <path d="M 412 440 Q 392 480 332 490 L 342 450 Q 382 445 412 440" 
+          fill="#8B4513"/>
+  </g>
+  
+  <!-- ═══════════════════════════════════════
+       JUBA - Camada média (mechas detalhadas)
+       ═══════════════════════════════════════ -->
+  <g>
+    <!-- Mechas superiores detalhadas -->
+    <ellipse cx="200" cy="150" rx="35" ry="50" fill="url(#maneGradient2)" transform="rotate(-20, 200, 150)"/>
+    <ellipse cx="256" cy="130" rx="40" ry="45" fill="url(#maneGradient2)"/>
+    <ellipse cx="312" cy="150" rx="35" ry="50" fill="url(#maneGradient2)" transform="rotate(20, 312, 150)"/>
+    
+    <!-- Mechas laterais -->
+    <ellipse cx="140" cy="220" rx="30" ry="55" fill="url(#maneGradient2)" transform="rotate(-30, 140, 220)"/>
+    <ellipse cx="120" cy="290" rx="28" ry="50" fill="url(#maneGradient2)" transform="rotate(-15, 120, 290)"/>
+    <ellipse cx="110" cy="360" rx="25" ry="45" fill="url(#maneGradient2)" transform="rotate(-5, 110, 360)"/>
+    
+    <ellipse cx="372" cy="220" rx="30" ry="55" fill="url(#maneGradient2)" transform="rotate(30, 372, 220)"/>
+    <ellipse cx="392" cy="290" rx="28" ry="50" fill="url(#maneGradient2)" transform="rotate(15, 392, 290)"/>
+    <ellipse cx="402" cy="360" rx="25" ry="45" fill="url(#maneGradient2)" transform="rotate(5, 402, 360)"/>
+    
+    <!-- Mechas inferiores -->
+    <ellipse cx="180" cy="420" rx="30" ry="35" fill="url(#maneGradient2)" transform="rotate(-10, 180, 420)"/>
+    <ellipse cx="256" cy="440" rx="35" ry="30" fill="url(#maneGradient2)"/>
+    <ellipse cx="332" cy="420" rx="30" ry="35" fill="url(#maneGradient2)" transform="rotate(10, 332, 420)"/>
+  </g>
+  
+  <!-- ═══════════════════════════════════════
+       JUBA - Camada interna (mais clara)
+       ═══════════════════════════════════════ -->
+  <g>
+    <ellipse cx="180" cy="180" rx="25" ry="40" fill="#DAA520" opacity="0.7"/>
+    <ellipse cx="256" cy="160" rx="30" ry="35" fill="#DAA520" opacity="0.7"/>
+    <ellipse cx="332" cy="180" rx="25" ry="40" fill="#DAA520" opacity="0.7"/>
+    
+    <ellipse cx="145" cy="260" rx="20" ry="40" fill="#DAA520" opacity="0.6"/>
+    <ellipse cx="367" cy="260" rx="20" ry="40" fill="#DAA520" opacity="0.6"/>
+  </g>
+  
+  <!-- ═══════════════════════════════════════
+       FACE DO LEÃO
+       ═══════════════════════════════════════ -->
+  
+  <!-- Face principal -->
+  <ellipse cx="256" cy="290" rx="110" ry="100" fill="url(#faceGradient)"/>
+  
+  <!-- Sombras laterais da face -->
+  <ellipse cx="170" cy="300" rx="25" ry="60" fill="#A0522D" opacity="0.4"/>
+  <ellipse cx="342" cy="300" rx="25" ry="60" fill="#A0522D" opacity="0.4"/>
+  
+  <!-- ═══════════════════════════════════════
+       ORELHAS
+       ═══════════════════════════════════════ -->
+  
+  <!-- Orelha esquerda -->
+  <ellipse cx="175" cy="200" rx="28" ry="35" fill="#C49A6C"/>
+  <ellipse cx="175" cy="205" rx="18" ry="22" fill="#8B6914"/>
+  
+  <!-- Orelha direita -->
+  <ellipse cx="337" cy="200" rx="28" ry="35" fill="#C49A6C"/>
+  <ellipse cx="337" cy="205" rx="18" ry="22" fill="#8B6914"/>
+  
+  <!-- ═══════════════════════════════════════
+       TESTA E SOBRANCELHAS
+       ═══════════════════════════════════════ -->
+  
+  <!-- Linhas da testa -->
+  <path d="M 220 230 Q 256 220 292 230" stroke="#A0522D" stroke-width="2" fill="none" opacity="0.5"/>
+  <path d="M 225 240 Q 256 232 287 240" stroke="#A0522D" stroke-width="1.5" fill="none" opacity="0.4"/>
+  
+  <!-- Sobrancelhas -->
+  <path d="M 200 245 Q 220 235 240 245" stroke="#5D3A1A" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M 272 245 Q 292 235 312 245" stroke="#5D3A1A" stroke-width="4" fill="none" stroke-linecap="round"/>
+  
+  <!-- ═══════════════════════════════════════
+       OLHOS (realistas)
+       ═══════════════════════════════════════ -->
+  
+  <!-- Contorno dos olhos -->
+  <ellipse cx="220" cy="265" rx="22" ry="18" fill="#1A1A1A"/>
+  <ellipse cx="292" cy="265" rx="22" ry="18" fill="#1A1A1A"/>
+  
+  <!-- Íris -->
+  <ellipse cx="220" cy="265" rx="16" ry="15" fill="url(#eyeGradient)"/>
+  <ellipse cx="292" cy="265" rx="16" ry="15" fill="url(#eyeGradient)"/>
+  
+  <!-- Pupila -->
+  <ellipse cx="220" cy="265" rx="8" ry="10" fill="#000"/>
+  <ellipse cx="292" cy="265" rx="8" ry="10" fill="#000"/>
+  
+  <!-- Brilho dos olhos -->
+  <ellipse cx="225" cy="260" rx="4" ry="5" fill="#FFF"/>
+  <ellipse cx="297" cy="260" rx="4" ry="5" fill="#FFF"/>
+  <ellipse cx="217" cy="268" rx="2" ry="2" fill="#FFF" opacity="0.5"/>
+  <ellipse cx="289" cy="268" rx="2" ry="2" fill="#FFF" opacity="0.5"/>
+  
+  <!-- ═══════════════════════════════════════
+       FOCINHO
+       ═══════════════════════════════════════ -->
+  
+  <!-- Base do focinho -->
+  <ellipse cx="256" cy="320" rx="50" ry="40" fill="url(#snoutGradient)"/>
+  
+  <!-- Nariz -->
+  <path d="M 256 295 L 240 315 Q 256 325 272 315 Z" fill="url(#noseGradient)"/>
+  <ellipse cx="256" cy="308" rx="18" ry="12" fill="url(#noseGradient)"/>
+  
+  <!-- Brilho do nariz -->
+  <ellipse cx="250" cy="303" rx="5" ry="3" fill="#666" opacity="0.5"/>
+  
+  <!-- Linha do nariz para a boca -->
+  <line x1="256" y1="320" x2="256" y2="335" stroke="#5D3A1A" stroke-width="2"/>
+  
+  <!-- Boca -->
+  <path d="M 256 335 Q 230 355 210 345" stroke="#5D3A1A" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M 256 335 Q 282 355 302 345" stroke="#5D3A1A" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- Queixo (área mais clara) -->
+  <ellipse cx="256" cy="365" rx="35" ry="20" fill="#F5DEB3" opacity="0.6"/>
+  
+  <!-- ═══════════════════════════════════════
+       BIGODES
+       ═══════════════════════════════════════ -->
+  
+  <!-- Pontos dos bigodes -->
+  <g fill="#2C2C2C">
+    <circle cx="230" cy="325" r="2"/>
+    <circle cx="235" cy="330" r="2"/>
+    <circle cx="240" cy="325" r="2"/>
+    <circle cx="282" cy="325" r="2"/>
+    <circle cx="277" cy="330" r="2"/>
+    <circle cx="272" cy="325" r="2"/>
+  </g>
+  
+  <!-- Bigodes esquerdos -->
+  <g stroke="#1A1A1A" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <path d="M 230 325 Q 180 315 140 310"/>
+    <path d="M 235 330 Q 180 330 135 335"/>
+    <path d="M 240 335 Q 190 350 150 360"/>
+  </g>
+  
+  <!-- Bigodes direitos -->
+  <g stroke="#1A1A1A" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <path d="M 282 325 Q 332 315 372 310"/>
+    <path d="M 277 330 Q 332 330 377 335"/>
+    <path d="M 272 335 Q 322 350 362 360"/>
+  </g>
+  
+  <!-- ═══════════════════════════════════════
+       TREVOS DA SORTE
+       ═══════════════════════════════════════ -->
+  
+  <!-- Trevo esquerdo -->
+  <g transform="translate(70, 90)" filter="url(#glow)">
+    <g fill="url(#cloverGrad)">
+      <ellipse cx="25" cy="15" rx="12" ry="14"/>
+      <ellipse cx="45" cy="15" rx="12" ry="14"/>
+      <ellipse cx="35" cy="5" rx="12" ry="12"/>
+      <ellipse cx="35" cy="30" rx="10" ry="12"/>
+      <!-- Caule -->
+      <path d="M 35 40 Q 30 55 35 70" stroke="#1E5631" stroke-width="4" fill="none"/>
+    </g>
+    <!-- Veias das folhas -->
+    <g stroke="#1E5631" stroke-width="1" opacity="0.5">
+      <line x1="25" y1="8" x2="25" y2="22"/>
+      <line x1="45" y1="8" x2="45" y2="22"/>
+      <line x1="28" y1="5" x2="42" y2="5"/>
+    </g>
+  </g>
+  
+  <!-- Trevo direito -->
+  <g transform="translate(387, 90)" filter="url(#glow)">
+    <g fill="url(#cloverGrad)">
+      <ellipse cx="25" cy="15" rx="12" ry="14"/>
+      <ellipse cx="45" cy="15" rx="12" ry="14"/>
+      <ellipse cx="35" cy="5" rx="12" ry="12"/>
+      <ellipse cx="35" cy="30" rx="10" ry="12"/>
+      <!-- Caule -->
+      <path d="M 35 40 Q 40 55 35 70" stroke="#1E5631" stroke-width="4" fill="none"/>
+    </g>
+    <!-- Veias das folhas -->
+    <g stroke="#1E5631" stroke-width="1" opacity="0.5">
+      <line x1="25" y1="8" x2="25" y2="22"/>
+      <line x1="45" y1="8" x2="45" y2="22"/>
+      <line x1="28" y1="5" x2="42" y2="5"/>
+    </g>
+  </g>
+  
+  <!-- ═══════════════════════════════════════
+       TEXTO "M" (Milionários)
+       ═══════════════════════════════════════ -->
+  
+  <text x="256" y="475" font-family="Georgia, serif" font-size="50" font-weight="bold" 
+        text-anchor="middle" fill="#FFD700" stroke="#B8860B" stroke-width="2"
+        filter="url(#shadow)">M</text>
+  
+  <!-- Borda decorativa -->
+  <circle cx="256" cy="256" r="250" fill="none" stroke="#FFD700" stroke-width="3" opacity="0.3"/>
+  <circle cx="256" cy="256" r="245" fill="none" stroke="#FFD700" stroke-width="1" opacity="0.2"/>
+</svg>
