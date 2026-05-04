@@ -279,40 +279,33 @@ const ModalParabens = (function() {
 // BUSCAR RESULTADO DA LOTOFÁCIL
 // ============================================
 
-// Jogos do bolão - 20 jogos (Teimosinha 24x a partir de 23/02/2026)
+// Jogos do bolão - 13 jogos (Teimosinha 24x a partir de 22/04/2026)
 const jogos = [
-    [2, 4, 5, 8, 9, 10, 11, 14, 15, 18, 19, 20, 21, 22, 23],
-    [1, 3, 5, 6, 7, 10, 11, 13, 14, 17, 20, 21, 22, 23, 25],
-    [1, 2, 3, 6, 9, 10, 11, 13, 14, 15, 17, 18, 19, 21, 25],
-    [2, 4, 5, 6, 7, 9, 11, 12, 15, 17, 19, 20, 21, 22, 25],
+    [1, 2, 3, 4, 5, 7, 11, 12, 14, 15, 17, 18, 21, 23, 25],
+    [2, 4, 5, 6, 8, 9, 11, 12, 15, 17, 19, 20, 21, 22, 25],
     [1, 2, 4, 6, 9, 10, 11, 14, 15, 16, 17, 20, 22, 23, 25],
     [1, 4, 5, 7, 9, 10, 11, 12, 15, 17, 18, 20, 21, 22, 25],
-    [1, 2, 3, 5, 6, 7, 10, 11, 13, 14, 17, 18, 20, 21, 22],
-    [2, 3, 4, 6, 9, 10, 13, 14, 17, 19, 20, 21, 22, 23, 25],
-    [2, 3, 4, 7, 9, 10, 11, 13, 14, 15, 17, 18, 20, 21, 25],
     [1, 2, 4, 6, 8, 9, 11, 12, 15, 16, 17, 18, 20, 22, 23],
     [1, 2, 3, 5, 6, 9, 11, 12, 14, 18, 19, 20, 21, 23, 24],
     [1, 3, 4, 6, 8, 12, 13, 15, 16, 17, 19, 20, 21, 23, 24],
-    [1, 4, 5, 6, 7, 8, 11, 12, 15, 16, 19, 20, 21, 22, 23],
-    [1, 2, 4, 6, 7, 9, 11, 14, 15, 16, 17, 20, 21, 22, 25],
-    [1, 4, 5, 6, 7, 10, 11, 12, 15, 17, 18, 20, 22, 23, 25],
-    [2, 4, 5, 7, 8, 9, 11, 14, 15, 18, 19, 20, 21, 22, 23],
-    [1, 2, 4, 7, 8, 10, 11, 12, 15, 16, 18, 20, 22, 23, 25],
-    [1, 4, 5, 8, 9, 10, 11, 14, 15, 16, 19, 20, 21, 22, 23],
-    [2, 3, 4, 5, 6, 7, 10, 11, 13, 14, 17, 19, 20, 21, 23],
-    [1, 3, 4, 7, 9, 10, 13, 14, 15, 17, 18, 19, 21, 22, 23]
+    [1, 2, 3, 4, 5, 6, 7, 9, 11, 13, 15, 17, 18, 19, 20],
+    [1, 2, 3, 5, 7, 8, 9, 10, 11, 13, 15, 17, 18, 19, 21],
+    [1, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13, 16, 17, 20, 21],
+    [1, 2, 3, 5, 6, 7, 10, 11, 13, 14, 17, 18, 20, 21, 22],
+    [2, 3, 4, 6, 9, 10, 13, 14, 17, 19, 20, 21, 22, 23, 25],
+    [2, 3, 4, 7, 9, 10, 11, 13, 14, 15, 17, 18, 20, 21, 25]
 ];
 
-// Mapeamento de concursos - DINÂMICO desde o 3586 até o atual
-// Teimosinha de 24 sorteios a partir de 13/01/2026
+// Mapeamento de concursos - DINÂMICO desde o 3668 até o atual
+// Teimosinha de 24 sorteios a partir de 22/04/2026
 function gerarConcursosTeimosinha() {
     const concursos = [];
     // Usar formato com horário para evitar problemas de fuso horário
-    const dataInicio = new Date(2026, 1, 23); // 23/02/2026 - Concurso 3619 (Teimosinha 24x)
+    const dataInicio = new Date(2026, 3, 22); // 22/04/2026 - Concurso 3668 (Teimosinha 24x)
     const hoje = new Date();
     
     // Gerar todos os 24 concursos da teimosinha independente da data atual
-    let concursoAtual = 3619;
+    let concursoAtual = 3668;
     let dataAtual = new Date(dataInicio);
     
     const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
@@ -339,8 +332,8 @@ function gerarConcursosTeimosinha() {
         dataAtual.setDate(dataAtual.getDate() + 1);
     }
     
-    console.log(`📅 Gerados ${concursos.length} concursos para verificação (do 3619 até ${concursoAtual - 1})`);
-    console.log(`📊 Teimosinha 24x iniciada em 23/02/2026 - 20 jogos por sorteio`);
+    console.log(`📅 Gerados ${concursos.length} concursos para verificação (do 3668 até ${concursoAtual - 1})`);
+    console.log(`📊 Teimosinha 24x iniciada em 22/04/2026 - 13 jogos por sorteio`);
     return concursos;
 }
 
