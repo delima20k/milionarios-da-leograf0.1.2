@@ -1740,6 +1740,143 @@ body {
 .btn-send:active { transform: scale(0.95); }
 
 /* ========================================
+   🎤 BOTÃO MIC
+   ======================================== */
+.btn-mic {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.2s, transform 0.15s;
+    color: #555;
+}
+.btn-mic:hover { background: rgba(0,0,0,0.08); transform: scale(1.1); }
+.btn-mic--recording {
+    background: rgba(231,76,60,0.15);
+    animation: pulse-record 0.9s infinite;
+}
+@keyframes pulse-record {
+    0%, 100% { transform: scale(1); }
+    50%       { transform: scale(1.15); }
+}
+
+/* ========================================
+   🎵 ÁUDIO MENSAGEM
+   ======================================== */
+.chat-msg-audio {
+    display: block;
+    width: 100%;
+    max-width: 240px;
+    height: 36px;
+    border-radius: 20px;
+    outline: none;
+}
+
+/* ========================================
+   👥 CARD USUÁRIO + BOTÃO LIGAR
+   ======================================== */
+.chat-user-card-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+.btn-user-call {
+    background: #2ecc71;
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.15s;
+    flex-shrink: 0;
+}
+.btn-user-call:hover { background: #27ae60; transform: scale(1.12); }
+
+/* ========================================
+   📞 MODAL CHAMADA RECEBIDA
+   ======================================== */
+.call-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 100002;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.72);
+}
+.call-modal--hidden { display: none; }
+.call-modal-box {
+    background: #fff;
+    border-radius: 20px;
+    padding: 36px 28px 28px;
+    text-align: center;
+    min-width: 280px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.3);
+}
+.call-avatar {
+    font-size: 52px;
+    display: block;
+    margin-bottom: 8px;
+    animation: ring-phone 0.8s infinite;
+}
+@keyframes ring-phone {
+    0%, 100% { transform: rotate(0deg); }
+    20%       { transform: rotate(-18deg); }
+    40%       { transform: rotate(18deg); }
+    60%       { transform: rotate(-10deg); }
+    80%       { transform: rotate(10deg); }
+}
+.call-modal-name   { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: #1a1a1a; }
+.call-modal-status { color: #666; margin-bottom: 24px; font-size: 15px; }
+.call-modal-btns   { display: flex; gap: 16px; justify-content: center; }
+.btn-call-reject {
+    background: #e74c3c; color: #fff; border: none;
+    padding: 12px 22px; border-radius: 50px; cursor: pointer; font-size: 15px;
+    transition: background 0.2s;
+}
+.btn-call-reject:hover { background: #c0392b; }
+.btn-call-accept {
+    background: #2ecc71; color: #fff; border: none;
+    padding: 12px 22px; border-radius: 50px; cursor: pointer; font-size: 15px;
+    transition: background 0.2s;
+}
+.btn-call-accept:hover { background: #27ae60; }
+
+/* ========================================
+   📞 BARRA DE CHAMADA ATIVA
+   ======================================== */
+.call-bar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 100001;
+    background: #1a1a2e;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.4);
+}
+.call-bar--hidden  { display: none; }
+.call-bar-name     { font-weight: 700; flex: 1; }
+.call-bar-status   { color: #2ecc71; font-size: 13px; }
+.btn-call-end {
+    background: #e74c3c; color: #fff; border: none;
+    padding: 8px 16px; border-radius: 20px; cursor: pointer;
+    font-size: 13px; font-weight: 600;
+    transition: background 0.2s;
+}
+.btn-call-end:hover { background: #c0392b; }
+
+/* ========================================
    💬 CHAT — AVATAR UPLOAD BTN
    ======================================== */
 .chat-avatar-btn {

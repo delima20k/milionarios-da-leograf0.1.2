@@ -10,7 +10,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {
     getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot,
-    collection, addDoc, deleteDoc, query, orderBy, limit, serverTimestamp
+    collection, addDoc, deleteDoc, query, orderBy, limit, where, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import {
     getStorage, ref, uploadBytes, getDownloadURL
@@ -39,6 +39,18 @@ class ChatApp {
     #privatePeer        = null;
     #pendingVerifyEmail = null;
     #audio              = new Audio('./notification.mp3');
+    #audioIn            = new Audio('./ring-chat.mp3');
+    #remoteAudio        = new Audio();
+    #mediaRecorder      = null;
+    #audioChunks        = [];
+    #isRecording        = false;
+    #peerConn           = null;
+    #localStream        = null;
+    #callDocId          = null;
+    #unsubCallIn        = null;
+    #unsubCallOut       = null;
+
+    static #STUN = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 
     constructor() {
         const app            = initializeApp(FIREBASE_CONFIG);
@@ -112,6 +124,7 @@ class ChatApp {
         await this.#setPresence(true);
         this.#subscribeOnline();
         this.#subscribeUsers();
+        this.#listenForIncomingCalls();
         if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
     }
 
@@ -283,7 +296,9 @@ class ChatApp {
             (!isOwn ? avHtml : '') +
             `<div class="chat-msg-bubble">` +
             (!isOwn ? `<span class="chat-msg-name">${this.#esc(data.name || 'Anônimo')}</span>` : '') +
-            `<p class="chat-msg-text">${this.#esc(data.text)}</p>` +
+            (data.type === 'audio' && data.audioURL
+                ? `<audio class="chat-msg-audio" src="${data.audioURL}" controls preload="none"></audio>`
+                : `<p class="chat-msg-text">${this.#esc(data.text)}</p>`) +
             `<span class="chat-msg-time">${time}</span>` +
             (isOwn ? `<button class="chat-msg-delete" title="Apagar mensagem">🗑</button>` : '') +
             '</div>' +
@@ -341,6 +356,8 @@ class ChatApp {
                 .forEach(d => {
                     const data = d.data();
                     const uid  = d.id;
+                    const wrap = document.createElement('div');
+                    wrap.className = 'chat-user-card-wrap';
                     const card = document.createElement('button');
                     card.className = 'chat-user-card';
                     const av = data.photoURL
@@ -352,7 +369,14 @@ class ChatApp {
                     card.addEventListener('click', () => this.#openPrivateChat({
                         uid, name: data.name || 'Usuário', photoURL: data.photoURL || ''
                     }));
-                    container.appendChild(card);
+                    const callBtn = document.createElement('button');
+                    callBtn.className = 'btn-user-call';
+                    callBtn.title = 'Ligar para ' + (data.name || 'Usuário');
+                    callBtn.textContent = '📞';
+                    callBtn.addEventListener('click', () => this.#startCall({ uid, name: data.name || 'Usuário' }));
+                    wrap.appendChild(card);
+                    wrap.appendChild(callBtn);
+                    container.appendChild(wrap);
                 });
         });
     }
@@ -365,10 +389,15 @@ class ChatApp {
     }
 
     #notificar(nome, texto) {
+        const chatOpen = document.getElementById('sideMenu')?.classList.contains('active');
+        if (chatOpen) {
+            this.#audioIn.currentTime = 0;
+            this.#audioIn.play().catch(() => {});
+            setTimeout(() => { this.#audioIn.pause(); this.#audioIn.currentTime = 0; }, 1000);
+            return;
+        }
         this.#audio.currentTime = 0;
         this.#audio.play().catch(() => {});
-        const menu = document.getElementById('sideMenu');
-        if (menu?.classList.contains('active')) return;
         if (!('Notification' in window) || Notification.permission !== 'granted') return;
         new Notification('💬 ' + nome, { body: texto, icon: 'logo-header.png' });
     }
@@ -438,12 +467,200 @@ class ChatApp {
         return map[e.code] || 'Erro: ' + e.message;
     }
 
+    // ──────────────────────────────────────────
+    // 🎤 VOZ
+    // ──────────────────────────────────────────
+    async #startVoiceRecord(chatType) {
+        if (this.#isRecording) return;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.#audioChunks = [];
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+            this.#mediaRecorder = new MediaRecorder(stream, { mimeType });
+            this.#mediaRecorder.ondataavailable = e => { if (e.data.size > 0) this.#audioChunks.push(e.data); };
+            this.#mediaRecorder.onstop = async () => {
+                stream.getTracks().forEach(t => t.stop());
+                const blob = new Blob(this.#audioChunks, { type: mimeType });
+                this.#audioChunks = [];
+                await this.#uploadVoiceMsg(blob, chatType);
+                this.#isRecording = false;
+                this.#updateMicUI(chatType, false);
+            };
+            this.#mediaRecorder.start();
+            this.#isRecording = true;
+            this.#updateMicUI(chatType, true);
+        } catch { alert('Permita o acesso ao microfone para enviar áudios.'); }
+    }
+
+    #stopVoiceRecord() {
+        if (this.#isRecording && this.#mediaRecorder?.state !== 'inactive') this.#mediaRecorder.stop();
+    }
+
+    #updateMicUI(chatType, recording) {
+        const btn = document.getElementById(chatType === 'group' ? 'btnMicGroup' : 'btnMicPrivate');
+        if (!btn) return;
+        btn.classList.toggle('btn-mic--recording', recording);
+        btn.title       = recording ? 'Parar gravação' : 'Gravar áudio';
+        btn.textContent = recording ? '⏹' : '🎤';
+    }
+
+    async #uploadVoiceMsg(blob, chatType) {
+        if (!this.#currentUser) return;
+        const ext     = blob.type.includes('webm') ? 'webm' : 'mp4';
+        const path    = `voiceMessages/${this.#currentUser.uid}/${Date.now()}.${ext}`;
+        const storRef = ref(this.#storage, path);
+        const snap    = await uploadBytes(storRef, blob);
+        const url     = await getDownloadURL(snap.ref);
+        const msgData = {
+            uid: this.#currentUser.uid, name: this.#getDisplayName(),
+            photoURL: this.#currentUser.photoURL || '', text: '🎤 Áudio',
+            type: 'audio', audioURL: url, createdAt: serverTimestamp()
+        };
+        if (chatType === 'group') {
+            await addDoc(collection(this.#db, 'messages'), msgData);
+        } else if (chatType === 'private' && this.#privatePeer) {
+            const chatId = [this.#currentUser.uid, this.#privatePeer.uid].sort().join('_');
+            await addDoc(collection(this.#db, 'privateChats/' + chatId + '/messages'), msgData);
+        }
+    }
+
+    // ──────────────────────────────────────────
+    // 📞 CHAMADAS P2P (WebRTC)
+    // ──────────────────────────────────────────
+    #listenForIncomingCalls() {
+        if (!this.#currentUser) return;
+        this.#unsubCallIn?.(); this.#unsubCallIn = null;
+        const q = query(
+            collection(this.#db, 'calls'),
+            where('calleeId', '==', this.#currentUser.uid),
+            where('status', '==', 'calling')
+        );
+        this.#unsubCallIn = onSnapshot(q, snap => {
+            snap.docChanges().forEach(c => {
+                if (c.type === 'added') this.#showIncomingCall(c.doc.id, c.doc.data().callerName || 'Alguém');
+            });
+        });
+    }
+
+    #showIncomingCall(callId, callerName) {
+        const modal  = document.getElementById('callModal');
+        const nameEl = document.getElementById('callModalName');
+        if (!modal || !nameEl) return;
+        nameEl.textContent = callerName;
+        modal.classList.remove('call-modal--hidden');
+        document.getElementById('btnAcceptCall').onclick = async () => {
+            modal.classList.add('call-modal--hidden');
+            await this.#acceptCall(callId, callerName);
+        };
+        document.getElementById('btnRejectCall').onclick = async () => {
+            modal.classList.add('call-modal--hidden');
+            await updateDoc(doc(this.#db, 'calls', callId), { status: 'rejected' }).catch(() => {});
+        };
+    }
+
+    async #startCall(peer) {
+        if (this.#peerConn) { alert('Você já está em uma chamada.'); return; }
+        try {
+            this.#localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.#peerConn    = new RTCPeerConnection(ChatApp.#STUN);
+            this.#localStream.getTracks().forEach(t => this.#peerConn.addTrack(t, this.#localStream));
+            this.#peerConn.ontrack = e => { this.#remoteAudio.srcObject = e.streams[0]; this.#remoteAudio.play().catch(() => {}); };
+            this.#peerConn.oniceconnectionstatechange = () => {
+                if (['disconnected','failed','closed'].includes(this.#peerConn?.iceConnectionState)) this.#endCall();
+            };
+            const callRef    = doc(collection(this.#db, 'calls'));
+            this.#callDocId  = callRef.id;
+            this.#peerConn.onicecandidate = async e => {
+                if (e.candidate) await addDoc(collection(this.#db, 'calls', this.#callDocId, 'callerCandidates'), e.candidate.toJSON());
+            };
+            const offer = await this.#peerConn.createOffer();
+            await this.#peerConn.setLocalDescription(offer);
+            await setDoc(callRef, {
+                callerId: this.#currentUser.uid, callerName: this.#getDisplayName(),
+                calleeId: peer.uid, offer: { type: offer.type, sdp: offer.sdp },
+                status: 'calling', createdAt: serverTimestamp()
+            });
+            this.#showCallBar('calling', peer.name);
+            this.#unsubCallOut = onSnapshot(callRef, async snap => {
+                const data = snap.data();
+                if (!data) return;
+                if (data.status === 'rejected' || data.status === 'ended') { this.#endCall(); return; }
+                if (data.status === 'active' && data.answer && !this.#peerConn?.remoteDescription) {
+                    await this.#peerConn.setRemoteDescription(new RTCSessionDescription(data.answer));
+                    this.#showCallBar('active', peer.name);
+                }
+            });
+            onSnapshot(collection(this.#db, 'calls', this.#callDocId, 'calleeCandidates'), snap => {
+                snap.docChanges().forEach(async c => {
+                    if (c.type === 'added') await this.#peerConn?.addIceCandidate(new RTCIceCandidate(c.doc.data()));
+                });
+            });
+        } catch (e) { console.error('Erro ao iniciar chamada:', e); this.#endCall(); }
+    }
+
+    async #acceptCall(callId, callerName) {
+        try {
+            this.#callDocId   = callId;
+            this.#localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.#peerConn    = new RTCPeerConnection(ChatApp.#STUN);
+            this.#localStream.getTracks().forEach(t => this.#peerConn.addTrack(t, this.#localStream));
+            this.#peerConn.ontrack = e => { this.#remoteAudio.srcObject = e.streams[0]; this.#remoteAudio.play().catch(() => {}); };
+            this.#peerConn.oniceconnectionstatechange = () => {
+                if (['disconnected','failed','closed'].includes(this.#peerConn?.iceConnectionState)) this.#endCall();
+            };
+            const callRef  = doc(this.#db, 'calls', callId);
+            const callSnap = await getDoc(callRef);
+            await this.#peerConn.setRemoteDescription(new RTCSessionDescription(callSnap.data().offer));
+            this.#peerConn.onicecandidate = async e => {
+                if (e.candidate) await addDoc(collection(this.#db, 'calls', callId, 'calleeCandidates'), e.candidate.toJSON());
+            };
+            const answer = await this.#peerConn.createAnswer();
+            await this.#peerConn.setLocalDescription(answer);
+            await updateDoc(callRef, { answer: { type: answer.type, sdp: answer.sdp }, status: 'active' });
+            onSnapshot(collection(this.#db, 'calls', callId, 'callerCandidates'), snap => {
+                snap.docChanges().forEach(async c => {
+                    if (c.type === 'added') await this.#peerConn?.addIceCandidate(new RTCIceCandidate(c.doc.data()));
+                });
+            });
+            this.#showCallBar('active', callerName);
+        } catch (e) { console.error('Erro ao aceitar chamada:', e); this.#endCall(); }
+    }
+
+    #showCallBar(status, name) {
+        const bar = document.getElementById('callBar');
+        if (!bar) return;
+        const nameEl   = document.getElementById('callBarName');
+        const statusEl = document.getElementById('callBarStatus');
+        if (nameEl)   nameEl.textContent   = name;
+        if (statusEl) statusEl.textContent = status === 'calling' ? 'Chamando...' : '🟢 Em chamada';
+        bar.classList.remove('call-bar--hidden');
+    }
+
+    async #endCall() {
+        this.#peerConn?.close();  this.#peerConn = null;
+        this.#localStream?.getTracks().forEach(t => t.stop()); this.#localStream = null;
+        this.#remoteAudio.srcObject = null;
+        this.#unsubCallOut?.(); this.#unsubCallOut = null;
+        if (this.#callDocId) {
+            await updateDoc(doc(this.#db, 'calls', this.#callDocId), { status: 'ended' }).catch(() => {});
+            this.#callDocId = null;
+        }
+        document.getElementById('callBar')?.classList.add('call-bar--hidden');
+        document.getElementById('callModal')?.classList.add('call-modal--hidden');
+    }
+
+    // ──────────────────────────────────────────
+    // 🧹 CLEANUP
+    // ──────────────────────────────────────────
     #cleanup() {
         this.#unsubGrpMsgs?.();  this.#unsubGrpMsgs  = null;
         this.#unsubPrivMsgs?.(); this.#unsubPrivMsgs = null;
         this.#unsubUserDoc?.();  this.#unsubUserDoc  = null;
         this.#unsubOnline?.();   this.#unsubOnline   = null;
         this.#unsubUsers?.();    this.#unsubUsers    = null;
+        this.#unsubCallIn?.();   this.#unsubCallIn   = null;
+        if (this.#isRecording) this.#stopVoiceRecord();
+        this.#endCall().catch(() => {});
         if (this.#currentUser) { this.#setPresence(false); this.#currentUser = null; }
         ['chatGroupMessages', 'chatPrivateMessages'].forEach(id => {
             const el = document.getElementById(id);
@@ -466,6 +683,15 @@ class ChatApp {
         document.getElementById('tabBtnCadastro')?.addEventListener('click', () => this.#switchTab('cadastro'));
         // Voltar ao login da tela de verificação
         document.getElementById('btnBackToLogin')?.addEventListener('click', () => this.#switchTab('login'));
+        // Mic — áudio
+        document.getElementById('btnMicGroup')?.addEventListener('click',   () => {
+            if (this.#isRecording) this.#stopVoiceRecord(); else this.#startVoiceRecord('group');
+        });
+        document.getElementById('btnMicPrivate')?.addEventListener('click', () => {
+            if (this.#isRecording) this.#stopVoiceRecord(); else this.#startVoiceRecord('private');
+        });
+        // Chamada — encerrar
+        document.getElementById('btnEndCall')?.addEventListener('click', () => this.#endCall());
         document.getElementById('btnLogoutChat')?.addEventListener('click',    () => this.#logout());
         document.getElementById('btnLogoutPending')?.addEventListener('click', () => this.#logout());
         document.getElementById('btnAvatarUpload')?.addEventListener('click', () =>

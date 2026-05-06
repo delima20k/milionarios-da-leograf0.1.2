@@ -247,6 +247,7 @@
                     </div>
                     <div class="chat-messages" id="chatGroupMessages"></div>
                     <div class="chat-input-area">
+                        <button class="btn-mic" id="btnMicGroup" title="Gravar áudio">🎤</button>
                         <textarea class="chat-textarea" id="chatGroupInput" placeholder="Mensagem para o grupo..." rows="1" maxlength="500"></textarea>
                         <button class="btn-send" id="btnSendGroup" title="Enviar">➤</button>
                     </div>
@@ -260,6 +261,7 @@
                     </div>
                     <div class="chat-messages" id="chatPrivateMessages"></div>
                     <div class="chat-input-area">
+                        <button class="btn-mic" id="btnMicPrivate" title="Gravar áudio">🎤</button>
                         <textarea class="chat-textarea" id="chatPrivateInput" placeholder="Mensagem privada..." rows="1" maxlength="500"></textarea>
                         <button class="btn-send" id="btnSendPrivate" title="Enviar">➤</button>
                     </div>
@@ -605,5 +607,26 @@
             });
         }
     </script>
+    <!-- 📞 MODAL CHAMADA RECEBIDA -->
+    <div class="call-modal call-modal--hidden" id="callModal">
+        <div class="call-modal-box">
+            <div class="call-avatar">📞</div>
+            <p class="call-modal-name" id="callModalName"></p>
+            <p class="call-modal-status">está te chamando...</p>
+            <div class="call-modal-btns">
+                <button class="btn-call-reject" id="btnRejectCall">❌ Recusar</button>
+                <button class="btn-call-accept" id="btnAcceptCall">✅ Aceitar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📞 BARRA DE CHAMADA ATIVA -->
+    <div class="call-bar call-bar--hidden" id="callBar">
+        <span class="call-bar-icon">📞</span>
+        <span class="call-bar-name" id="callBarName"></span>
+        <span class="call-bar-status" id="callBarStatus"></span>
+        <button class="btn-call-end" id="btnEndCall">📵 Encerrar</button>
+    </div>
+
 </body>
 </html>
