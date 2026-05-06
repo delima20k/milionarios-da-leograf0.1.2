@@ -300,39 +300,44 @@ const jogos = [
 // Teimosinha de 24 sorteios a partir de 22/04/2026
 function gerarConcursosTeimosinha() {
     const concursos = [];
-    // Usar formato com horário para evitar problemas de fuso horário
-    const dataInicio = new Date(2026, 3, 22); // 22/04/2026 - Concurso 3668 (Teimosinha 24x)
-    const hoje = new Date();
-    
+    const dataInicio = new Date(2026, 3, 22); // 22/04/2026 - Concurso 3667 (Teimosinha 24x)
+
+    // Feriados nacionais sem sorteio da Lotofácil (formato YYYY-M-D)
+    const feriados = new Set([
+        '2026-5-1'  // Dia do Trabalho — sem sorteio
+    ]);
+
     // Gerar todos os 24 concursos da teimosinha independente da data atual
-    let concursoAtual = 3668;
+    let concursoAtual = 3667;
     let dataAtual = new Date(dataInicio);
-    
+
     const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
-    
+
     // Gerar todos os 24 concursos da teimosinha
     while (concursos.length < 24) {
         const diaSemana = dataAtual.getDay();
-        
-        // Lotofácil não tem sorteio aos domingos
-        if (diaSemana !== 0) {
+        const chaveData = `${dataAtual.getFullYear()}-${dataAtual.getMonth() + 1}-${dataAtual.getDate()}`;
+        const ehFeriado = feriados.has(chaveData);
+
+        // Lotofácil não tem sorteio aos domingos nem em feriados
+        if (diaSemana !== 0 && !ehFeriado) {
             const dataFormatada = dataAtual.toLocaleDateString('pt-BR');
             const diaTexto = diasSemana[diaSemana];
-            
+
             concursos.push({
                 data: dataFormatada,
                 concurso: concursoAtual,
                 dia: diaTexto
             });
-            
+
             concursoAtual++;
         }
-        
+
         // Avançar para o próximo dia
         dataAtual.setDate(dataAtual.getDate() + 1);
     }
-    
-    console.log(`📅 Gerados ${concursos.length} concursos para verificação (do 3668 até ${concursoAtual - 1})`);
+
+    console.log(`📅 Gerados ${concursos.length} concursos para verificação (do 3667 até ${concursoAtual - 1})`);
     console.log(`📊 Teimosinha 24x iniciada em 22/04/2026 - 13 jogos por sorteio`);
     return concursos;
 }
@@ -361,7 +366,6 @@ btnBuscarResultado.addEventListener('click', async () => {
 
         let concursosEncontrados = 0;
         let ultimoConcursoReal = null;
-        let errosConsecutivos = 0;
 
         // Buscar todos os concursos desde o 3586
         for (const concursoInfo of concursosTeimosinha) {
@@ -384,39 +388,25 @@ btnBuscarResultado.addEventListener('click', async () => {
                         console.log(`📝 Números sorteados: ${dados.listaDezenas.join(', ')}`);
                         concursosEncontrados++;
                         ultimoConcursoReal = concursoInfo.concurso;
-                        errosConsecutivos = 0; // Reset contador de erros
                     } else {
                         console.log(`⚠️ Concurso ${concursoInfo.concurso} sem números sorteados`);
-                        errosConsecutivos++;
                     }
                 } else {
-                    console.log(`❌ Concurso ${concursoInfo.concurso} ainda não realizado (status: ${response.status})`);
-                    errosConsecutivos++;
-                    
-                    // Se já temos alguns resultados e encontramos 3 erros consecutivos, provavelmente chegamos no limite
-                    if (concursosEncontrados > 0 && errosConsecutivos >= 3) {
-                        console.log(`🛑 Parando busca após ${errosConsecutivos} erros consecutivos. Último concurso válido: ${ultimoConcursoReal}`);
-                        break;
-                    }
+                    // Concurso ainda não realizado (futuro) — continuar iterando
+                    console.log(`⏳ Concurso ${concursoInfo.concurso} ainda não realizado (status: ${response.status})`);
                 }
             } catch (error) {
                 console.log(`⚠️ Erro ao buscar concurso ${concursoInfo.concurso}:`, error.message);
-                errosConsecutivos++;
-                
-                // Se erro na API e já temos alguns resultados e muitos erros consecutivos, parar
-                if (concursosEncontrados > 0 && errosConsecutivos >= 5) {
-                    console.log(`🛑 Parando busca por muitos erros de API consecutivos (${errosConsecutivos})`);
-                    break;
-                }
             }
 
             // Pequeno delay para não sobrecarregar a API
             await new Promise(resolve => setTimeout(resolve, 150));
         }
 
+        const pendentes = concursosTeimosinha.length - todosResultados.length;
         console.log(`📋 RESULTADO DA BUSCA:`);
-        console.log(`   ✅ Concursos encontrados: ${todosResultados.length}`);
-        console.log(`   📊 Período verificado: Concurso 3586 até ${ultimoConcursoReal || 'atual'}`);
+        console.log(`   ✅ Sorteados: ${todosResultados.length} | ⏳ Pendentes: ${pendentes}`);
+        console.log(`   📊 Período verificado: Concurso 3667 até ${ultimoConcursoReal || 'atual'}`);
         console.log(`   📅 Datas: ${todosResultados.length > 0 ? `${todosResultados[0].data} até ${todosResultados[todosResultados.length - 1].data}` : 'Nenhuma'}`);
 
         if (todosResultados.length === 0) {
@@ -446,7 +436,7 @@ btnBuscarResultado.addEventListener('click', async () => {
         mostrarResultadoPrincipal(ultimoResultado);
 
         // Verificar todos os jogos em todos os concursos
-        verificarTodosJogos(todosResultados);
+        verificarTodosJogos(todosResultados, pendentes);
         
         // Scroll suave até o resultado
         resultadoContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -505,15 +495,27 @@ function mostrarResultadoPrincipal(resultado) {
 }
 
 // Função para verificar todos os jogos em todos os concursos
-function verificarTodosJogos(resultados) {
+function verificarTodosJogos(resultados, pendentes = 0) {
     console.log('🎯 Iniciando verificação de todos os jogos...');
-    
+
     const resumoPremios = document.getElementById('resumoPremios');
     const jogosVerificados = document.getElementById('jogosVerificados');
-    
+
     // Limpar containers
     resumoPremios.innerHTML = '';
     jogosVerificados.innerHTML = '';
+
+    // Banner de progresso da teimosinha
+    const bannerProgresso = document.createElement('div');
+    bannerProgresso.style.cssText = 'padding: 15px 20px; background: rgba(52,152,219,0.15); border: 2px solid rgba(52,152,219,0.4); border-radius: 10px; text-align: center; margin-bottom: 25px; color: #fff; font-size: 16px;';
+    bannerProgresso.innerHTML = `
+        <span style="color:#2ecc71; font-weight:bold;">✅ ${resultados.length} sorteado(s)</span>
+        &nbsp;·&nbsp;
+        <span style="color:#f39c12; font-weight:bold;">⏳ ${pendentes} aguardando sorteio</span>
+        &nbsp;·&nbsp;
+        <span style="color:#3498db;">Total da teimosinha: 24 concursos</span>
+    `;
+    jogosVerificados.appendChild(bannerProgresso);
     
     // Contadores gerais de todos os concursos
     const contadoresGerais = {
