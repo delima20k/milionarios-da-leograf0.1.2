@@ -156,7 +156,8 @@ class ChatApp {
             const cred = await createUserWithEmailAndPassword(this.#auth, email, pass);
             await updateProfile(cred.user, { displayName: name });
             await sendEmailVerification(cred.user, {
-                url: window.location.origin + window.location.pathname
+                url: 'https://delima20k.github.io/milionarios-da-leograf0.1.2/',
+                handleCodeInApp: false
             });
         } catch (e) { this.#showError(this.#translateError(e)); }
     }
