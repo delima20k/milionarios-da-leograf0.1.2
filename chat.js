@@ -90,7 +90,7 @@ class ChatApp {
             await setDoc(userRef, {
                 name: user.displayName || user.email.split('@')[0],
                 email: user.email, photoURL: user.photoURL || '',
-                approved: false, online: false, lastSeen: serverTimestamp()
+                approved: true, online: false, lastSeen: serverTimestamp()
             });
         }
         this.#unsubUserDoc = onSnapshot(userRef, d => {
