@@ -5,7 +5,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
     getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider,
-    sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
+    createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification,
     signOut, updateProfile
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {
@@ -36,9 +36,9 @@ class ChatApp {
     #unsubUserDoc  = null;
     #unsubOnline   = null;
     #unsubUsers    = null;
-    #privatePeer   = null;
-    #pendingEmail  = null;
-    #audio         = new Audio('./notification.mp3');
+    #privatePeer        = null;
+    #pendingVerifyEmail = null;
+    #audio              = new Audio('./notification.mp3');
 
     constructor() {
         const app            = initializeApp(FIREBASE_CONFIG);
@@ -46,9 +46,9 @@ class ChatApp {
         this.#db             = getFirestore(app);
         this.#storage        = getStorage(app);
         this.#googleProvider = new GoogleAuthProvider();
+        this.#auth.languageCode = 'pt-BR';
         this.#syncHeaderHeight();
         this.#bindUI();
-        this.#handleEmailLinkRedirect();
         this.#watchAuth();
         this.#bindPresenceEvents();
     }
@@ -64,26 +64,25 @@ class ChatApp {
 
     #watchAuth() { onAuthStateChanged(this.#auth, u => this.#handleAuthChange(u)); }
 
-    async #handleEmailLinkRedirect() {
-        if (!isSignInWithEmailLink(this.#auth, window.location.href)) return;
-        let email = localStorage.getItem('emailParaLogin');
-        if (!email) email = window.prompt('Por segurança, confirme seu email:');
-        if (!email) return;
-        try {
-            const result = await signInWithEmailLink(this.#auth, email, window.location.href);
-            localStorage.removeItem('emailParaLogin');
-            const savedName = localStorage.getItem('nomeParaLogin');
-            if (savedName && !result.user.displayName) {
-                await updateProfile(result.user, { displayName: savedName });
-                localStorage.removeItem('nomeParaLogin');
-            }
-            window.history.replaceState({}, document.title, window.location.pathname);
-        } catch (e) { this.#showError(this.#translateError(e)); }
-    }
-
     async #handleAuthChange(user) {
         this.#cleanup();
-        if (!user) { this.#showPanel('login'); return; }
+        if (!user) {
+            if (this.#pendingVerifyEmail) {
+                const e = this.#pendingVerifyEmail;
+                this.#pendingVerifyEmail = null;
+                this.#showPanel('login');
+                this.#showVerifyScreen(e);
+            } else {
+                this.#showPanel('login');
+            }
+            return;
+        }
+        const isPasswordOnly = user.providerData.every(p => p.providerId === 'password');
+        if (!user.emailVerified && isPasswordOnly) {
+            this.#pendingVerifyEmail = user.email;
+            await signOut(this.#auth);
+            return;
+        }
         this.#currentUser = user;
         const userRef = doc(this.#db, 'users', user.uid);
         const snap    = await getDoc(userRef);
@@ -114,26 +113,37 @@ class ChatApp {
         if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
     }
 
-    async #sendEmailLink() {
-        const name  = document.getElementById('loginName')?.value.trim();
+    async #loginWithPassword() {
         const email = document.getElementById('loginEmail')?.value.trim();
-        if (!email) { this.#showError('Digite seu email.'); return; }
-        const settings = { url: window.location.origin + window.location.pathname, handleCodeInApp: true };
+        const pass  = document.getElementById('loginPassword')?.value;
+        if (!email || !pass) { this.#showError('Preencha email e senha.'); return; }
         try {
             this.#clearError();
-            await sendSignInLinkToEmail(this.#auth, email, settings);
-            localStorage.setItem('emailParaLogin', email);
-            if (name) localStorage.setItem('nomeParaLogin', name);
-            this.#pendingEmail = email;
-            this.#showLinkSentScreen(email);
+            const cred = await signInWithEmailAndPassword(this.#auth, email, pass);
+            if (!cred.user.emailVerified) {
+                await signOut(this.#auth);
+                this.#showError('Confirme seu email antes de entrar. Verifique sua caixa de entrada.');
+            }
         } catch (e) { this.#showError(this.#translateError(e)); }
     }
 
-    #showLinkSentScreen(email) {
-        document.querySelectorAll('.chat-tab-panel').forEach(p => p.classList.add('chat-tab-panel--hidden'));
-        document.getElementById('tabLinkSent')?.classList.remove('chat-tab-panel--hidden');
-        const el = document.getElementById('linkSentEmail');
-        if (el) el.textContent = email;
+    async #registerWithPassword() {
+        const name    = document.getElementById('cadastroName')?.value.trim();
+        const email   = document.getElementById('cadastroEmail')?.value.trim();
+        const pass    = document.getElementById('cadastroPassword')?.value;
+        const confirm = document.getElementById('cadastroConfirm')?.value;
+        if (!name)                    { this.#showError('Digite seu nome.'); return; }
+        if (!email)                   { this.#showError('Digite seu email.'); return; }
+        if (!pass || pass.length < 6) { this.#showError('Senha deve ter no mínimo 6 caracteres.'); return; }
+        if (pass !== confirm)         { this.#showError('As senhas não coincidem.'); return; }
+        try {
+            this.#clearError();
+            const cred = await createUserWithEmailAndPassword(this.#auth, email, pass);
+            await updateProfile(cred.user, { displayName: name });
+            await sendEmailVerification(cred.user, {
+                url: window.location.origin + window.location.pathname
+            });
+        } catch (e) { this.#showError(this.#translateError(e)); }
     }
 
     async #loginGoogle() {
@@ -361,10 +371,27 @@ class ChatApp {
         new Notification('💬 ' + nome, { body: texto, icon: 'logo-header.png' });
     }
 
+    #switchTab(tab) {
+        document.querySelectorAll('.chat-tab-panel').forEach(p => p.classList.add('chat-tab-panel--hidden'));
+        document.getElementById(tab === 'login' ? 'tabLogin' : 'tabCadastro')?.classList.remove('chat-tab-panel--hidden');
+        document.querySelectorAll('.chat-tab').forEach(b => b.classList.remove('chat-tab--active'));
+        document.getElementById(tab === 'login' ? 'tabBtnLogin' : 'tabBtnCadastro')?.classList.add('chat-tab--active');
+        this.#clearError();
+    }
+
+    #showVerifyScreen(email) {
+        document.querySelectorAll('.chat-tab-panel').forEach(p => p.classList.add('chat-tab-panel--hidden'));
+        document.getElementById('tabVerifyEmail')?.classList.remove('chat-tab-panel--hidden');
+        document.querySelectorAll('.chat-tab').forEach(b => b.classList.remove('chat-tab--active'));
+        const el = document.getElementById('verifyEmailAddr');
+        if (el) el.textContent = email;
+    }
+
     #showPanel(name) {
         const map = { login: 'chatLoginScreen', pending: 'chatPendingScreen', chat: 'chatScreen' };
         Object.values(map).forEach(id => document.getElementById(id)?.classList.add('chat-panel--hidden'));
         if (map[name]) document.getElementById(map[name])?.classList.remove('chat-panel--hidden');
+        if (name === 'login') this.#switchTab('login');
         this.#clearError();
     }
 
@@ -398,7 +425,13 @@ class ChatApp {
             'auth/too-many-requests':         'Muitas tentativas. Aguarde um momento.',
             'auth/invalid-action-code':       'Link expirado ou já usado. Solicite um novo.',
             'auth/expired-action-code':       'Link expirado. Solicite um novo.',
-            'auth/unauthorized-continue-uri': 'Domínio não autorizado no Firebase.'
+            'auth/unauthorized-continue-uri': 'Domínio não autorizado no Firebase.',
+            'auth/wrong-password':            'Senha incorreta.',
+            'auth/invalid-credential':        'Email ou senha incorretos.',
+            'auth/user-not-found':            'Nenhuma conta encontrada com este email.',
+            'auth/email-already-in-use':      'Este email já possui uma conta. Faça login.',
+            'auth/weak-password':             'Senha muito fraca. Use no mínimo 6 caracteres.',
+            'auth/user-disabled':             'Esta conta foi desativada.'
         };
         return map[e.code] || 'Erro: ' + e.message;
     }
@@ -418,13 +451,19 @@ class ChatApp {
     }
 
     #bindUI() {
-        document.getElementById('btnLoginEmail')?.addEventListener('click',  () => this.#sendEmailLink());
-        document.getElementById('loginEmail')?.addEventListener('keydown',    e => { if (e.key === 'Enter') this.#sendEmailLink(); });
-        document.getElementById('btnResendLink')?.addEventListener('click',  () => {
-            document.querySelectorAll('.chat-tab-panel').forEach(p => p.classList.add('chat-tab-panel--hidden'));
-            document.getElementById('tabLogin')?.classList.remove('chat-tab-panel--hidden');
-        });
-        document.getElementById('btnLoginGoogle')?.addEventListener('click',   () => this.#loginGoogle());
+        // Entrar
+        document.getElementById('btnLoginSenha')?.addEventListener('click',   () => this.#loginWithPassword());
+        document.getElementById('loginPassword')?.addEventListener('keydown', e => { if (e.key === 'Enter') this.#loginWithPassword(); });
+        document.getElementById('loginEmail')?.addEventListener('keydown',    e => { if (e.key === 'Enter') this.#loginWithPassword(); });
+        document.getElementById('btnLoginGoogle')?.addEventListener('click',  () => this.#loginGoogle());
+        // Cadastrar
+        document.getElementById('btnCadastrar')?.addEventListener('click',       () => this.#registerWithPassword());
+        document.getElementById('cadastroConfirm')?.addEventListener('keydown', e => { if (e.key === 'Enter') this.#registerWithPassword(); });
+        // Troca de abas
+        document.getElementById('tabBtnLogin')?.addEventListener('click',    () => this.#switchTab('login'));
+        document.getElementById('tabBtnCadastro')?.addEventListener('click', () => this.#switchTab('cadastro'));
+        // Voltar ao login da tela de verificação
+        document.getElementById('btnBackToLogin')?.addEventListener('click', () => this.#switchTab('login'));
         document.getElementById('btnLogoutChat')?.addEventListener('click',    () => this.#logout());
         document.getElementById('btnLogoutPending')?.addEventListener('click', () => this.#logout());
         document.getElementById('btnAvatarUpload')?.addEventListener('click', () =>

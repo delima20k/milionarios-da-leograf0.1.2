@@ -136,25 +136,40 @@
                     <div class="chat-login-card">
                         <h2 class="chat-login-title">💬 Chat dos Milionários</h2>
 
-                        <!-- Formulário único: magic link + Google -->
+                        <!-- Abas: Entrar / Cadastrar -->
+                        <div class="chat-tabs">
+                            <button class="chat-tab chat-tab--active" id="tabBtnLogin">Entrar</button>
+                            <button class="chat-tab" id="tabBtnCadastro">Cadastrar</button>
+                        </div>
+
+                        <!-- Aba: Entrar -->
                         <div class="chat-tab-panel" id="tabLogin">
-                            <input class="chat-field" type="text" id="loginName" placeholder="Seu nome (primeira vez)" autocomplete="name">
                             <input class="chat-field" type="email" id="loginEmail" placeholder="Email" autocomplete="email">
-                            <button class="btn-chat-primary" id="btnLoginEmail">📧 Enviar link de acesso</button>
+                            <input class="chat-field" type="password" id="loginPassword" placeholder="Senha" autocomplete="current-password">
+                            <button class="btn-chat-primary" id="btnLoginSenha">🔑 Entrar</button>
                             <div class="chat-or"><span>ou</span></div>
                             <button class="btn-chat-google" id="btnLoginGoogle">
                                 <span class="google-g">G</span> Entrar com Google
                             </button>
                         </div>
 
-                        <!-- Confirmação de envio do link -->
-                        <div class="chat-tab-panel chat-tab-panel--hidden" id="tabLinkSent">
+                        <!-- Aba: Cadastrar -->
+                        <div class="chat-tab-panel chat-tab-panel--hidden" id="tabCadastro">
+                            <input class="chat-field" type="text" id="cadastroName" placeholder="Seu nome" autocomplete="name">
+                            <input class="chat-field" type="email" id="cadastroEmail" placeholder="Email" autocomplete="email">
+                            <input class="chat-field" type="password" id="cadastroPassword" placeholder="Senha (mínimo 6 caracteres)" autocomplete="new-password">
+                            <input class="chat-field" type="password" id="cadastroConfirm" placeholder="Confirmar senha" autocomplete="new-password">
+                            <button class="btn-chat-primary" id="btnCadastrar">📧 Criar conta</button>
+                        </div>
+
+                        <!-- Tela: email de verificação enviado -->
+                        <div class="chat-tab-panel chat-tab-panel--hidden" id="tabVerifyEmail">
                             <div class="chat-link-sent">
                                 <div class="chat-link-sent-icon">📬</div>
-                                <p>Link enviado para</p>
-                                <strong id="linkSentEmail"></strong>
-                                <p class="chat-link-hint">Abra o email e clique no link para entrar no chat.</p>
-                                <button class="btn-chat-secondary" id="btnResendLink">Reenviar link</button>
+                                <p>Email de verificação enviado para</p>
+                                <strong id="verifyEmailAddr"></strong>
+                                <p class="chat-link-hint">Abra o email, clique no link de confirmação e volte aqui para entrar.</p>
+                                <button class="btn-chat-secondary" id="btnBackToLogin">Voltar para Entrar</button>
                             </div>
                         </div>
 
