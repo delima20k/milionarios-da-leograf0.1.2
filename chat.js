@@ -92,6 +92,8 @@ class ChatApp {
                 email: user.email, photoURL: user.photoURL || '',
                 approved: true, online: false, lastSeen: serverTimestamp()
             });
+        } else if (!snap.data().approved) {
+            await updateDoc(userRef, { approved: true });
         }
         this.#unsubUserDoc = onSnapshot(userRef, d => {
             if (!d.exists()) return;
