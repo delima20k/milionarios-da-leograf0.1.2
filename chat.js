@@ -284,7 +284,7 @@ class ChatApp {
         if (!container || document.getElementById('msg-' + id)) return;
         const isOwn  = this.#currentUser && data.uid === this.#currentUser.uid;
         const time   = data.createdAt?.toDate
-            ? data.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+            ? data.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
             : '';
         const avHtml = data.photoURL
             ? `<img src="${data.photoURL}" class="chat-msg-avatar" alt="">`
@@ -292,23 +292,98 @@ class ChatApp {
         const el     = document.createElement('div');
         el.id        = 'msg-' + id;
         el.className = 'chat-msg ' + (isOwn ? 'chat-msg--own' : 'chat-msg--other');
+
+        const bodyHtml = (data.type === 'audio' && data.audioURL)
+            ? this.#buildAudioPlayer(data.audioURL, time, isOwn)
+            : `<p class="chat-msg-text">${this.#esc(data.text)}</p><span class="chat-msg-time">${time}</span>`;
+
         el.innerHTML =
             (!isOwn ? avHtml : '') +
             `<div class="chat-msg-bubble">` +
             (!isOwn ? `<span class="chat-msg-name">${this.#esc(data.name || 'Anônimo')}</span>` : '') +
-            (data.type === 'audio' && data.audioURL
-                ? `<audio class="chat-msg-audio" src="${data.audioURL}" controls preload="none"></audio>`
-                : `<p class="chat-msg-text">${this.#esc(data.text)}</p>`) +
-            `<span class="chat-msg-time">${time}</span>` +
+            bodyHtml +
             (isOwn ? `<button class="chat-msg-delete" title="Apagar mensagem">🗑</button>` : '') +
             '</div>' +
             (isOwn ? avHtml : '');
+
         el.querySelector('.chat-msg-delete')?.addEventListener('click', () => {
             const realId = id.replace(/^priv-/, '');
             this.#deleteMessage(realId, type);
         });
+
+        if (data.type === 'audio' && data.audioURL) this.#bindAudioPlayer(el);
+
         container.appendChild(el);
         if (notify && data.uid !== this.#currentUser?.uid) this.#notificar(data.name, data.text);
+    }
+
+    // Gera o HTML do player de áudio customizado
+    #buildAudioPlayer(audioURL, time, isOwn) {
+        const BARS   = [4,7,12,18,22,26,22,18,14,10,16,20,24,20,16,12,8,14,18,22,18,14,10,8,6,4];
+        const barsHtml = BARS.map((h, i) =>
+            `<div class="cap-bar" style="height:${h}px" data-idx="${i}"></div>`
+        ).join('');
+        return `
+            <div class="chat-audio-player" data-src="${audioURL}">
+                <button class="cap-play-btn" title="Play">▶️</button>
+                <div class="cap-waveform-wrap">
+                    <div class="cap-bars">
+                        ${barsHtml}
+                        <div class="cap-dot"></div>
+                    </div>
+                    <div class="cap-footer">
+                        <span class="cap-duration">0:00</span>
+                        <span class="cap-time">${time}</span>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    // Vincula eventos ao player de áudio após inserir no DOM
+    #bindAudioPlayer(msgEl) {
+        const player   = msgEl.querySelector('.chat-audio-player');
+        if (!player) return;
+        const src      = player.dataset.src;
+        const playBtn  = player.querySelector('.cap-play-btn');
+        const bars     = [...player.querySelectorAll('.cap-bar')];
+        const dot      = player.querySelector('.cap-dot');
+        const durEl    = player.querySelector('.cap-duration');
+        const audio    = new Audio(src);
+        let barsW      = 0;
+
+        const fmt = s => {
+            const m = Math.floor(s / 60);
+            const sec = Math.floor(s % 60);
+            return `${m}:${sec.toString().padStart(2, '0')}`;
+        };
+
+        audio.addEventListener('loadedmetadata', () => {
+            durEl.textContent = fmt(audio.duration);
+            barsW = bars.reduce((acc, b) => acc + b.offsetWidth + 2, 0);
+        });
+
+        audio.addEventListener('timeupdate', () => {
+            if (!audio.duration) return;
+            const pct   = audio.currentTime / audio.duration;
+            const total = bars.length;
+            const played = Math.floor(pct * total);
+            bars.forEach((b, i) => b.classList.toggle('cap-bar--played', i < played));
+            if (!barsW) barsW = bars.reduce((acc, b) => acc + b.offsetWidth + 2, 0);
+            dot.style.left = Math.round(pct * barsW) + 'px';
+            durEl.textContent = fmt(audio.currentTime);
+        });
+
+        audio.addEventListener('ended', () => {
+            playBtn.textContent = '▶️';
+            bars.forEach(b => b.classList.remove('cap-bar--played'));
+            dot.style.left = '0px';
+            durEl.textContent = fmt(audio.duration || 0);
+        });
+
+        playBtn.addEventListener('click', () => {
+            if (audio.paused) { audio.play(); playBtn.textContent = '⏸️'; }
+            else              { audio.pause(); playBtn.textContent = '▶️'; }
+        });
     }
 
     async #deleteMessage(id, type) {
@@ -500,8 +575,7 @@ class ChatApp {
         const btn = document.getElementById(chatType === 'group' ? 'btnMicGroup' : 'btnMicPrivate');
         if (!btn) return;
         btn.classList.toggle('btn-mic--recording', recording);
-        btn.title       = recording ? 'Parar gravação' : 'Gravar áudio';
-        btn.textContent = recording ? '⏹' : '🎤';
+        btn.title = recording ? 'Solte para enviar' : 'Segure para gravar';
     }
 
     async #uploadVoiceMsg(blob, chatType) {
@@ -683,13 +757,20 @@ class ChatApp {
         document.getElementById('tabBtnCadastro')?.addEventListener('click', () => this.#switchTab('cadastro'));
         // Voltar ao login da tela de verificação
         document.getElementById('btnBackToLogin')?.addEventListener('click', () => this.#switchTab('login'));
-        // Mic — áudio
-        document.getElementById('btnMicGroup')?.addEventListener('click',   () => {
-            if (this.#isRecording) this.#stopVoiceRecord(); else this.#startVoiceRecord('group');
-        });
-        document.getElementById('btnMicPrivate')?.addEventListener('click', () => {
-            if (this.#isRecording) this.#stopVoiceRecord(); else this.#startVoiceRecord('private');
-        });
+        // Mic — pressionar/soltar estilo WhatsApp
+        const bindMic = (btnId, chatType) => {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            const start = () => { if (!this.#isRecording) this.#startVoiceRecord(chatType); };
+            const stop  = () => { if (this.#isRecording)  this.#stopVoiceRecord(); };
+            btn.addEventListener('mousedown',  e => { e.preventDefault(); start(); });
+            btn.addEventListener('mouseup',    stop);
+            btn.addEventListener('mouseleave', () => { if (this.#isRecording) stop(); });
+            btn.addEventListener('touchstart', e => { e.preventDefault(); start(); }, { passive: false });
+            btn.addEventListener('touchend',   stop);
+        };
+        bindMic('btnMicGroup',   'group');
+        bindMic('btnMicPrivate', 'private');
         // Chamada — encerrar
         document.getElementById('btnEndCall')?.addEventListener('click', () => this.#endCall());
         document.getElementById('btnLogoutChat')?.addEventListener('click',    () => this.#logout());

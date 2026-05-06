@@ -1740,49 +1740,140 @@ body {
 .btn-send:active { transform: scale(0.95); }
 
 /* ========================================
-   🎤 BOTÃO MIC
+   🎤 BOTÃO MIC — circular estilo WhatsApp
    ======================================== */
 .btn-mic {
-    background: none;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    background: var(--cor-primaria);
     border: none;
-    font-size: 20px;
-    cursor: pointer;
-    padding: 6px 8px;
     border-radius: 50%;
+    color: #fff;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
     flex-shrink: 0;
-    transition: background 0.2s, transform 0.15s;
-    color: #555;
+    transition: background 0.15s, transform 0.1s;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
 }
-.btn-mic:hover { background: rgba(0,0,0,0.08); transform: scale(1.1); }
+.btn-mic:hover  { background: #27ae60; transform: scale(1.08); }
 .btn-mic--recording {
-    background: rgba(231,76,60,0.15);
-    animation: pulse-record 0.9s infinite;
+    background: #e74c3c;
+    transform: scale(1.18);
+    box-shadow: 0 0 0 8px rgba(231,76,60,0.2);
+    animation: pulse-record 0.8s infinite;
 }
 @keyframes pulse-record {
-    0%, 100% { transform: scale(1); }
-    50%       { transform: scale(1.15); }
+    0%, 100% { box-shadow: 0 0 0 8px rgba(231,76,60,0.2); }
+    50%       { box-shadow: 0 0 0 14px rgba(231,76,60,0.07); }
 }
 
 /* ========================================
-   🎵 ÁUDIO MENSAGEM
+   🎵 PLAYER DE ÁUDIO CUSTOMIZADO
    ======================================== */
-.chat-msg-audio {
-    display: block;
-    width: 100%;
-    max-width: 240px;
-    height: 36px;
-    border-radius: 20px;
-    outline: none;
+.chat-audio-player {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 200px;
+    max-width: 260px;
+    padding: 4px 2px;
 }
+
+.cap-play-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    border-radius: 50%;
+    background: var(--cor-primaria);
+    border: none;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+.chat-msg--own .cap-play-btn { background: rgba(255,255,255,0.3); }
+.cap-play-btn:hover { background: #27ae60; }
+
+.cap-waveform-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.cap-bars {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 28px;
+    position: relative;
+}
+
+.cap-bar {
+    width: 3px;
+    border-radius: 2px;
+    background: rgba(0,0,0,0.2);
+    transition: background 0.1s;
+    flex-shrink: 0;
+}
+.chat-msg--own .cap-bar { background: rgba(255,255,255,0.35); }
+.cap-bar--played { background: var(--cor-primaria) !important; }
+.chat-msg--own .cap-bar--played { background: rgba(255,255,255,0.9) !important; }
+
+.cap-dot {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: var(--cor-primaria);
+    border-radius: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    left: 0;
+    transition: left 0.1s linear;
+    pointer-events: none;
+    z-index: 1;
+}
+.chat-msg--own .cap-dot { background: #fff; }
+
+.cap-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.cap-duration {
+    font-size: 10px;
+    color: rgba(0,0,0,0.45);
+    font-variant-numeric: tabular-nums;
+}
+.chat-msg--own .cap-duration { color: rgba(255,255,255,0.65); }
+
+.cap-time {
+    font-size: 10px;
+    color: rgba(0,0,0,0.35);
+}
+.chat-msg--own .cap-time { color: rgba(255,255,255,0.55); }
 
 /* ========================================
    👥 CARD USUÁRIO + BOTÃO LIGAR
    ======================================== */
 .chat-user-card-wrap {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
+    width: 100%;
 }
 .btn-user-call {
     background: #2ecc71;
@@ -1993,64 +2084,67 @@ body {
 
 /* ─── Cards de usuários ─── */
 .chat-user-cards {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     overflow-y: auto;
 }
 
 .chat-user-card {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
     background: #fff;
     border: 1px solid #ddd;
     border-radius: 14px;
-    padding: 14px 8px 12px;
+    padding: 10px 14px;
     cursor: pointer;
-    position: relative;
+    flex: 1;
     transition: background 0.2s, transform 0.12s;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    text-align: left;
+    min-width: 0;
 }
 
-.chat-user-card:hover  { background: #f5f0e8; transform: scale(1.04); }
+.chat-user-card:hover  { background: #f5f0e8; transform: scale(1.02); }
 .chat-user-card:active { transform: scale(0.97); }
 
 .chat-user-card-avatar {
-    width: 52px;
-    height: 52px;
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
     border-radius: 50%;
     object-fit: cover;
     border: 2px solid var(--cor-primaria);
 }
 
 .chat-user-card-avatar--initials {
-    width: 52px;
-    height: 52px;
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
     border-radius: 50%;
     background: linear-gradient(135deg, var(--cor-primaria), #27ae60);
     color: #fff;
-    font-size: 22px;
+    font-size: 16px;
     font-weight: bold;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
 }
 
 .chat-user-card-name {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: #333;
-    text-align: center;
-    word-break: break-word;
-    line-height: 1.3;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chat-user-card-online {
-    position: absolute;
-    top: 8px;
-    right: 10px;
     color: #2ecc71;
     font-size: 13px;
     line-height: 1;
