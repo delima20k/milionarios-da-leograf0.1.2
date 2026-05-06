@@ -108,20 +108,6 @@ hamburger.addEventListener('click', () => {
 // Fechar menu ao clicar no overlay
 overlay.addEventListener('click', fecharMenu);
 
-// Previne que o scroll do menu propague para a página
-sideMenu.addEventListener('touchmove', (e) => {
-    e.stopPropagation();
-}, { passive: true });
-
-// Adicionar evento de clique aos itens do menu
-const menuItems = document.querySelectorAll('.menu-item');
-menuItems.forEach(item => {
-    item.addEventListener('click', () => {
-        console.log(`Selecionado: ${item.textContent}`);
-        // Aqui você pode adicionar mais funcionalidades quando clicar em um nome
-    });
-});
-
 // ============================================
 // 📲 INSTALAR PWA - BOTÃO NO HEADER
 // ============================================

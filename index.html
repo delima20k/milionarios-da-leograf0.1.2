@@ -126,30 +126,93 @@
             </div>
         </div>
         
-        <!-- Menu Lateral -->
-        <nav class="side-menu" id="sideMenu">
-            <ul class="menu-list">
-                <li class="menu-item">Sogro do Anderson cabeleira</li>
-                <li class="menu-item">Renato e Alan</li>
-                <li class="menu-item">Anderson Cabeleira</li>
-                <li class="menu-item">Black</li>
-                <li class="menu-item">Sidnei</li>
-                <li class="menu-item">Fabio</li>
-                <li class="menu-item">Gil </li>
-                <li class="menu-item">Kabelo com K</li>
-                <li class="menu-item">Claudia</li>
-                <li class="menu-item">Wanderson</li>
-                <li class="menu-item">Alan</li>
-                <li class="menu-item">veio</li>
-                <li class="menu-item">Edimilson </li>
-                <li class="menu-item">Wilson</li>
-                <li class="menu-item">Ricardo</li>
-                <li class="menu-item">Joel</li>
-                <li class="menu-item">Li cozinheiro</li>
-                <li class="menu-item">Bahia</li>
-                <li class="menu-item">Luizinho</li>
-                <li class="menu-item">Iron</li>
-            </ul>
+        <!-- Chat Panel -->
+        <nav class="side-menu" id="sideMenu" aria-label="Chat dos Milionários">
+
+            <!-- 🔐 TELA DE LOGIN -->
+            <div class="chat-panel" id="chatLoginScreen">
+                <div class="chat-login-wrapper">
+                    <div class="chat-login-card">
+                        <h2 class="chat-login-title">💬 Chat dos Milionários</h2>
+
+                        <div class="chat-tabs" role="tablist">
+                            <button class="chat-tab chat-tab--active" data-tab="tabLogin" role="tab">Entrar</button>
+                            <button class="chat-tab" data-tab="tabSignup" role="tab">Cadastrar</button>
+                        </div>
+
+                        <!-- Login com email/senha -->
+                        <div class="chat-tab-panel" id="tabLogin">
+                            <input class="chat-field" type="email" id="loginEmail" placeholder="Email" autocomplete="email">
+                            <input class="chat-field" type="password" id="loginPassword" placeholder="Senha" autocomplete="current-password">
+                            <button class="btn-chat-primary" id="btnLoginEmail">Entrar</button>
+                            <div class="chat-or"><span>ou</span></div>
+                            <button class="btn-chat-google" id="btnLoginGoogle">
+                                <span class="google-g">G</span> Entrar com Google
+                            </button>
+                        </div>
+
+                        <!-- Cadastro -->
+                        <div class="chat-tab-panel chat-tab-panel--hidden" id="tabSignup">
+                            <input class="chat-field" type="text" id="signupName" placeholder="Seu nome" autocomplete="name">
+                            <input class="chat-field" type="email" id="signupEmail" placeholder="Email" autocomplete="email">
+                            <input class="chat-field" type="password" id="signupPassword" placeholder="Senha (mín. 6 caracteres)" autocomplete="new-password">
+                            <button class="btn-chat-primary" id="btnSignup">Criar conta</button>
+                            <div class="chat-or"><span>ou</span></div>
+                            <button class="btn-chat-google" id="btnSignupGoogle">
+                                <span class="google-g">G</span> Cadastrar com Google
+                            </button>
+                        </div>
+
+                        <p class="chat-auth-error chat-auth-error--hidden" id="chatAuthError" role="alert"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ⏳ AGUARDANDO APROVAÇÃO -->
+            <div class="chat-panel chat-panel--hidden" id="chatPendingScreen">
+                <div class="chat-pending-wrapper">
+                    <div class="chat-pending-icon">⏳</div>
+                    <h3>Aguardando aprovação</h3>
+                    <p>Sua conta foi criada!<br>Um administrador irá aprová-la em breve.</p>
+                    <button class="btn-chat-primary" id="btnLogoutPending">Sair</button>
+                </div>
+            </div>
+
+            <!-- 💬 CHAT PRINCIPAL -->
+            <div class="chat-panel chat-panel--hidden" id="chatScreen">
+                <!-- Header do chat -->
+                <div class="chat-header">
+                    <div class="chat-user-info">
+                        <img id="chatAvatar" class="chat-avatar" src="" alt="" style="display:none">
+                        <div class="chat-avatar-initials" id="chatAvatarInitials"></div>
+                        <div class="chat-user-meta">
+                            <span class="chat-username" id="chatUserName"></span>
+                            <span class="chat-online-badge">● online</span>
+                        </div>
+                    </div>
+                    <div class="chat-header-btns">
+                        <button class="btn-chat-icon" id="btnOnlineList" title="Ver quem está online">
+                            👥 <span id="onlineCount">0</span>
+                        </button>
+                        <button class="btn-chat-logout" id="btnLogoutChat">Sair</button>
+                    </div>
+                </div>
+
+                <!-- Painel de usuários online -->
+                <div class="chat-online-panel chat-online-panel--hidden" id="chatOnlinePanel">
+                    <ul id="onlineUsersList"></ul>
+                </div>
+
+                <!-- Área de mensagens -->
+                <div class="chat-messages" id="chatMessages"></div>
+
+                <!-- Input de mensagem -->
+                <div class="chat-input-area">
+                    <textarea class="chat-textarea" id="chatInput" placeholder="Digite uma mensagem..." rows="1" maxlength="500"></textarea>
+                    <button class="btn-send" id="btnSendMsg" title="Enviar">➤</button>
+                </div>
+            </div>
+
         </nav>
     </header>
 
@@ -471,6 +534,7 @@
     </div>
 
     <script src="script.js"></script>
+    <script type="module" src="chat.js"></script>
     <script>
         // Registrar Service Worker
         if ('serviceWorker' in navigator) {
