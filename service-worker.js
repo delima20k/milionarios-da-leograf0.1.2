@@ -1,6 +1,6 @@
-const CACHE_NAME = 'milionarios-v4.1';
-const STATIC_CACHE = 'milionarios-static-v4.1';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v4.1';
+const CACHE_NAME = 'milionarios-v4.2';
+const STATIC_CACHE = 'milionarios-static-v4.2';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v4.2';
 
 // Recursos essenciais para cache
 const CORE_ASSETS = [
@@ -9,6 +9,7 @@ const CORE_ASSETS = [
   './style.css',
   './script.js',
   './chat.js',
+  './firebase-messaging-sw.js',
   './notification.mp3',
   './ring-chat.mp3',
   './manifest.json',

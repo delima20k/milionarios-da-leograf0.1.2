@@ -15,6 +15,9 @@ import {
 import {
     getStorage, ref, uploadBytes, getDownloadURL
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js';
+import {
+    getMessaging, getToken, onMessage
+} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js';
 
 const FIREBASE_CONFIG = {
     apiKey:            'AIzaSyCIVshCdXm7Fp1X3kxGr5GZOF_jUBN3ChA',
@@ -26,9 +29,11 @@ const FIREBASE_CONFIG = {
 };
 
 class ChatApp {
+    #app;
     #auth;
     #db;
     #storage;
+    #messaging      = null;
     #googleProvider;
     #currentUser   = null;
     #unsubGrpMsgs  = null;
@@ -53,16 +58,17 @@ class ChatApp {
     static #STUN = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 
     constructor() {
-        const app            = initializeApp(FIREBASE_CONFIG);
-        this.#auth           = getAuth(app);
-        this.#db             = getFirestore(app);
-        this.#storage        = getStorage(app);
+        this.#app        = initializeApp(FIREBASE_CONFIG);
+        this.#auth       = getAuth(this.#app);
+        this.#db         = getFirestore(this.#app);
+        this.#storage    = getStorage(this.#app);
         this.#googleProvider = new GoogleAuthProvider();
         this.#auth.languageCode = 'pt-BR';
         this.#syncHeaderHeight();
         this.#bindUI();
         this.#watchAuth();
         this.#bindPresenceEvents();
+        this.#initFCM();
     }
 
     #syncHeaderHeight() {
@@ -75,6 +81,58 @@ class ChatApp {
     }
 
     #watchAuth() { onAuthStateChanged(this.#auth, u => this.#handleAuthChange(u)); }
+
+    // ──────────────────────────────────────────
+    // 🔔 FCM — Push Notifications
+    // ──────────────────────────────────────────
+    async #initFCM() {
+        if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
+        if (Notification.permission === 'denied') return;
+        try {
+            // Registra o SW dedicado ao FCM (obrigatório pelo Firebase)
+            const swReg = await navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './' });
+            this.#messaging = getMessaging(this.#app);
+
+            // Solicita permissão se ainda não concedida
+            if (Notification.permission !== 'granted') {
+                const perm = await Notification.requestPermission();
+                if (perm !== 'granted') return;
+            }
+
+            // Obtém token FCM — substitua VAPID_KEY pela chave gerada no Firebase Console
+            // Project Settings → Cloud Messaging → Web Push certificates → Generate key pair
+            const VAPID_KEY = 'COLE_SUA_VAPID_KEY_AQUI';
+            const token = await getToken(this.#messaging, {
+                vapidKey: VAPID_KEY,
+                serviceWorkerRegistration: swReg
+            });
+            if (token) await this.#saveFCMToken(token);
+
+            // Mensagem recebida com app em primeiro plano
+            onMessage(this.#messaging, payload => {
+                const n = payload.notification || {};
+                const body = n.body || '';
+                // Exibe como notificação nativa mesmo com app aberto
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.ready.then(reg =>
+                        reg.showNotification(n.title || '🎱 Milionários da Leograf', {
+                            body, icon: './icon-192.png', badge: './icon-192.png',
+                            tag: 'lotofacil-resultado', renotify: true
+                        })
+                    );
+                }
+            });
+        } catch (e) {
+            console.warn('[FCM] Erro ao inicializar:', e.message);
+        }
+    }
+
+    async #saveFCMToken(token) {
+        await setDoc(doc(this.#db, 'fcmTokens', token), {
+            uid:       this.#currentUser?.uid || null,
+            updatedAt: serverTimestamp()
+        });
+    }
 
     async #handleAuthChange(user) {
         this.#cleanup();
