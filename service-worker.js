@@ -1,6 +1,6 @@
-const CACHE_NAME = 'milionarios-v4.0';
-const STATIC_CACHE = 'milionarios-static-v4.0';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v4.0';
+const CACHE_NAME = 'milionarios-v4.1';
+const STATIC_CACHE = 'milionarios-static-v4.1';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v4.1';
 
 // Recursos essenciais para cache
 const CORE_ASSETS = [
@@ -182,15 +182,17 @@ self.addEventListener('push', event => {
   }
 });
 
-// Clique em notificações
+// Clique em notificações — foca janela existente ou abre nova
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  
-  if (event.action === 'view') {
-    event.waitUntil(
-      clients.openWindow('./')
-    );
-  }
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) {
+        if ('focus' in c) return c.focus();
+      }
+      return clients.openWindow('./');
+    })
+  );
 });
 
 // Log de informações do SW

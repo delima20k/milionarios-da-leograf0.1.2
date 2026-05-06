@@ -244,6 +244,8 @@ class ChatApp {
         const text  = input?.value.trim();
         if (!text || !this.#currentUser) return;
         input.value = ''; input.style.height = 'auto';
+        document.getElementById('btnMicGroup')?.classList.remove('btn-mic--hidden');
+        document.getElementById('btnSendGroup')?.classList.add('btn-send--hidden');
         await addDoc(collection(this.#db, 'messages'), {
             uid: this.#currentUser.uid, name: this.#getDisplayName(),
             photoURL: this.#currentUser.photoURL || '', text, createdAt: serverTimestamp()
@@ -272,6 +274,8 @@ class ChatApp {
         const text   = input?.value.trim();
         if (!text) return;
         input.value = ''; input.style.height = 'auto';
+        document.getElementById('btnMicPrivate')?.classList.remove('btn-mic--hidden');
+        document.getElementById('btnSendPrivate')?.classList.add('btn-send--hidden');
         const chatId  = [this.#currentUser.uid, this.#privatePeer.uid].sort().join('_');
         const colPath = 'privateChats/' + chatId + '/messages';
         await addDoc(collection(this.#db, colPath), {
@@ -474,7 +478,19 @@ class ChatApp {
         this.#audio.currentTime = 0;
         this.#audio.play().catch(() => {});
         if (!('Notification' in window) || Notification.permission !== 'granted') return;
-        new Notification('💬 ' + nome, { body: texto, icon: 'logo-header.png' });
+        const title = '💬 ' + nome;
+        const body  = texto || '🎵 Mensagem de áudio';
+        // Usa SW showNotification: entrega imediata mesmo com aba em segundo plano
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready
+                .then(reg => reg.showNotification(title, {
+                    body, icon: './logo.svg', badge: './logo.svg',
+                    tag: 'milionarios-chat', renotify: true, vibrate: [200, 100, 200]
+                }))
+                .catch(() => new Notification(title, { body, icon: './logo.svg' }));
+        } else {
+            new Notification(title, { body, icon: './logo.svg' });
+        }
     }
 
     #switchTab(tab) {
@@ -771,6 +787,20 @@ class ChatApp {
         };
         bindMic('btnMicGroup',   'group');
         bindMic('btnMicPrivate', 'private');
+        // Toggle mic ↔ send ao digitar
+        const bindMicSendToggle = (inputId, micId, sendId) => {
+            const inp  = document.getElementById(inputId);
+            const mic  = document.getElementById(micId);
+            const send = document.getElementById(sendId);
+            if (!inp || !mic || !send) return;
+            inp.addEventListener('input', () => {
+                const hasText = inp.value.trim().length > 0;
+                mic.classList.toggle('btn-mic--hidden', hasText);
+                send.classList.toggle('btn-send--hidden', !hasText);
+            });
+        };
+        bindMicSendToggle('chatGroupInput',   'btnMicGroup',   'btnSendGroup');
+        bindMicSendToggle('chatPrivateInput', 'btnMicPrivate', 'btnSendPrivate');
         // Chamada — encerrar
         document.getElementById('btnEndCall')?.addEventListener('click', () => this.#endCall());
         document.getElementById('btnLogoutChat')?.addEventListener('click',    () => this.#logout());
