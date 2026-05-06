@@ -1503,6 +1503,17 @@ body {
     font-weight: 600;
 }
 
+/* Texto de boas-vindas */
+.chat-welcome-text {
+    color: #1a1a1a;
+    font-size: 13px;
+    font-weight: 700;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .chat-online-badge {
     color: #2ecc71;
     font-size: 11px;
@@ -1727,6 +1738,232 @@ body {
 
 .btn-send:hover { background: #27ae60; transform: scale(1.08); }
 .btn-send:active { transform: scale(0.95); }
+
+/* ========================================
+   💬 CHAT — AVATAR UPLOAD BTN
+   ======================================== */
+.chat-avatar-btn {
+    position: relative;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.chat-avatar-overlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+}
+
+.chat-avatar-btn:hover .chat-avatar-overlay { opacity: 1; }
+
+/* ========================================
+   💬 CHAT — HOME (grupo + membros)
+   ======================================== */
+.chat-home {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-height: 0;
+}
+
+.chat-home--hidden { display: none; }
+
+.chat-home-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chat-home-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0;
+}
+
+/* ─── Card do grupo ─── */
+.chat-group-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 14px;
+    padding: 14px 16px;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+    transition: background 0.2s, transform 0.1s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.chat-group-card:hover  { background: #f5f0e8; transform: scale(1.01); }
+.chat-group-card:active { transform: scale(0.99); }
+
+.chat-group-icon {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, var(--cor-primaria), #27ae60);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.chat-group-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.chat-group-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1a1a1a;
+}
+
+.chat-group-sub {
+    font-size: 12px;
+    color: #888;
+}
+
+.chat-group-arrow {
+    color: #bbb;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* ─── Cards de usuários ─── */
+.chat-user-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
+    gap: 12px;
+}
+
+.chat-user-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 14px;
+    padding: 14px 8px 12px;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s, transform 0.12s;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.chat-user-card:hover  { background: #f5f0e8; transform: scale(1.04); }
+.chat-user-card:active { transform: scale(0.97); }
+
+.chat-user-card-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--cor-primaria);
+}
+
+.chat-user-card-avatar--initials {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--cor-primaria), #27ae60);
+    color: #fff;
+    font-size: 22px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.chat-user-card-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #333;
+    text-align: center;
+    word-break: break-word;
+    line-height: 1.3;
+}
+
+.chat-user-card-online {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    color: #2ecc71;
+    font-size: 13px;
+    line-height: 1;
+}
+
+/* ========================================
+   💬 CHAT — TELA DE CONVERSA
+   ======================================== */
+.chat-conversation {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.chat-conversation--hidden { display: none; }
+
+.chat-conv-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #ede7d9;
+    border-bottom: 1px solid #d5cfc3;
+    flex-shrink: 0;
+}
+
+.chat-back-btn {
+    background: none;
+    border: none;
+    color: var(--cor-primaria);
+    font-size: 22px;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0 6px 0 0;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.chat-back-btn:hover { color: #27ae60; }
+
+.chat-conv-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1a1a1a;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 /* Overlay */
 .overlay {

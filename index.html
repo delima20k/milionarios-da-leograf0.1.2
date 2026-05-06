@@ -177,10 +177,14 @@
                 <!-- Header do chat -->
                 <div class="chat-header">
                     <div class="chat-user-info">
-                        <img id="chatAvatar" class="chat-avatar" src="" alt="" style="display:none">
-                        <div class="chat-avatar-initials" id="chatAvatarInitials"></div>
+                        <!-- Avatar clicável para upload de foto -->
+                        <button class="chat-avatar-btn" id="btnAvatarUpload" title="Trocar foto de perfil">
+                            <img id="chatAvatar" class="chat-avatar" src="" alt="" style="display:none">
+                            <div class="chat-avatar-initials" id="chatAvatarInitials"></div>
+                            <div class="chat-avatar-overlay">📷</div>
+                        </button>
                         <div class="chat-user-meta">
-                            <span class="chat-username" id="chatUserName"></span>
+                            <span class="chat-welcome-text" id="chatWelcomeText">Olá Milionário!</span>
                             <span class="chat-online-badge">● online</span>
                         </div>
                     </div>
@@ -192,18 +196,57 @@
                     </div>
                 </div>
 
+                <!-- Input oculto para upload de avatar -->
+                <input type="file" id="avatarUploadInput" accept="image/*" style="display:none">
+
                 <!-- Painel de usuários online -->
                 <div class="chat-online-panel chat-online-panel--hidden" id="chatOnlinePanel">
                     <ul id="onlineUsersList"></ul>
                 </div>
 
-                <!-- Área de mensagens -->
-                <div class="chat-messages" id="chatMessages"></div>
+                <!-- HOME: grupo + membros -->
+                <div class="chat-home" id="chatHome">
+                    <div class="chat-home-section">
+                        <h3 class="chat-home-title">💬 Grupos</h3>
+                        <button class="chat-group-card" id="btnOpenGroup">
+                            <div class="chat-group-icon">🏆</div>
+                            <div class="chat-group-info">
+                                <span class="chat-group-name">Milionários da Lotofácil</span>
+                                <span class="chat-group-sub">Chat do grupo em tempo real</span>
+                            </div>
+                            <span class="chat-group-arrow">›</span>
+                        </button>
+                    </div>
+                    <div class="chat-home-section">
+                        <h3 class="chat-home-title">👥 Membros</h3>
+                        <div class="chat-user-cards" id="chatUserCards"></div>
+                    </div>
+                </div>
 
-                <!-- Input de mensagem -->
-                <div class="chat-input-area">
-                    <textarea class="chat-textarea" id="chatInput" placeholder="Digite uma mensagem..." rows="1" maxlength="500"></textarea>
-                    <button class="btn-send" id="btnSendMsg" title="Enviar">➤</button>
+                <!-- CHAT DO GRUPO -->
+                <div class="chat-conversation chat-conversation--hidden" id="chatGroupPanel">
+                    <div class="chat-conv-header">
+                        <button class="chat-back-btn" id="btnBackFromGroup">‹ Voltar</button>
+                        <span class="chat-conv-title">🏆 Milionários da Lotofácil</span>
+                    </div>
+                    <div class="chat-messages" id="chatGroupMessages"></div>
+                    <div class="chat-input-area">
+                        <textarea class="chat-textarea" id="chatGroupInput" placeholder="Mensagem para o grupo..." rows="1" maxlength="500"></textarea>
+                        <button class="btn-send" id="btnSendGroup" title="Enviar">➤</button>
+                    </div>
+                </div>
+
+                <!-- CHAT PRIVADO -->
+                <div class="chat-conversation chat-conversation--hidden" id="chatPrivatePanel">
+                    <div class="chat-conv-header">
+                        <button class="chat-back-btn" id="btnBackFromPrivate">‹ Voltar</button>
+                        <span class="chat-conv-title" id="chatPrivateTitle">Mensagem privada</span>
+                    </div>
+                    <div class="chat-messages" id="chatPrivateMessages"></div>
+                    <div class="chat-input-area">
+                        <textarea class="chat-textarea" id="chatPrivateInput" placeholder="Mensagem privada..." rows="1" maxlength="500"></textarea>
+                        <button class="btn-send" id="btnSendPrivate" title="Enviar">➤</button>
+                    </div>
                 </div>
             </div>
 
