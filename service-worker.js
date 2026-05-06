@@ -1,6 +1,6 @@
-const CACHE_NAME = 'milionarios-v3.1';
-const STATIC_CACHE = 'milionarios-static-v3.1';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v3.1';
+const CACHE_NAME = 'milionarios-v3.2';
+const STATIC_CACHE = 'milionarios-static-v3.2';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v3.2';
 
 // Recursos essenciais para cache
 const CORE_ASSETS = [
