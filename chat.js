@@ -609,6 +609,7 @@ class ChatApp {
         const btn = document.getElementById(chatType === 'group' ? 'btnMicGroup' : 'btnMicPrivate');
         if (!btn) return;
         btn.classList.toggle('btn-mic--recording', recording);
+        if (!recording) btn.classList.remove('btn-mic--locked');
         btn.title = recording ? 'Solte para enviar' : 'Segure para gravar';
     }
 
@@ -791,18 +792,67 @@ class ChatApp {
         document.getElementById('tabBtnCadastro')?.addEventListener('click', () => this.#switchTab('cadastro'));
         // Voltar ao login da tela de verificação
         document.getElementById('btnBackToLogin')?.addEventListener('click', () => this.#switchTab('login'));
-        // Mic — pressionar/soltar estilo WhatsApp
+        // Mic — pressionar/soltar + arraste 20px para travar
         const bindMic = (btnId, chatType) => {
             const btn = document.getElementById(btnId);
             if (!btn) return;
-            const start = () => { if (!this.#isRecording) this.#startVoiceRecord(chatType); };
-            const stop  = () => { if (this.#isRecording)  this.#stopVoiceRecord(); };
-            btn.addEventListener('mousedown',  e => { e.preventDefault(); start(); });
-            btn.addEventListener('mouseup',    stop);
-            btn.addEventListener('mouseleave', () => { if (this.#isRecording) stop(); });
-            btn.addEventListener('touchstart',  e => { e.preventDefault(); start(); }, { passive: false });
-            btn.addEventListener('touchend',    stop);
-            btn.addEventListener('touchcancel', stop);
+            let startY    = 0;
+            let locked    = false;   // gravação travada por arraste
+
+            const setLocked = (val) => {
+                locked = val;
+                btn.classList.toggle('btn-mic--locked', val);
+                btn.title = val ? 'Clique para parar e enviar' : 'Solte para enviar';
+            };
+
+            const startRec = () => {
+                if (!this.#isRecording) this.#startVoiceRecord(chatType);
+            };
+            const stopRec  = () => {
+                if (this.#isRecording) this.#stopVoiceRecord();
+                setLocked(false);
+            };
+
+            // Mouse
+            btn.addEventListener('mousedown', e => {
+                e.preventDefault();
+                if (locked) { stopRec(); return; }   // já travado: clique para
+                startY = e.clientY;
+                startRec();
+            });
+            btn.addEventListener('mousemove', e => {
+                if (!this.#isRecording || locked) return;
+                if (startY - e.clientY >= 20) setLocked(true);  // arrastou 20px p/ cima
+            });
+            btn.addEventListener('mouseup', () => {
+                if (locked) return;   // travado, não para ao soltar
+                stopRec();
+            });
+            btn.addEventListener('mouseleave', () => {
+                if (locked) return;
+                if (this.#isRecording) stopRec();
+            });
+
+            // Touch
+            btn.addEventListener('touchstart', e => {
+                e.preventDefault();
+                if (locked) { stopRec(); return; }
+                startY = e.touches[0].clientY;
+                startRec();
+            }, { passive: false });
+            btn.addEventListener('touchmove', e => {
+                if (!this.#isRecording || locked) return;
+                if (startY - e.touches[0].clientY >= 20) setLocked(true);
+            }, { passive: true });
+            btn.addEventListener('touchend', () => {
+                if (locked) return;
+                stopRec();
+            });
+            btn.addEventListener('touchcancel', () => {
+                locked = false;
+                btn.classList.remove('btn-mic--locked');
+                stopRec();
+            });
         };
         bindMic('btnMicGroup',   'group');
         bindMic('btnMicPrivate', 'private');

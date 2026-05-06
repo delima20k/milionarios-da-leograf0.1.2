@@ -1762,15 +1762,20 @@ body {
     touch-action: none;
 }
 .btn-mic:hover  { background: #27ae60; transform: scale(1.08); }
+/* Gravando normal: opacidade reduzida */
 .btn-mic--recording {
-    background: #e74c3c;
-    transform: scale(1.18);
-    box-shadow: 0 0 0 8px rgba(231,76,60,0.2);
-    animation: pulse-record 0.8s infinite;
+    opacity: 0.55;
+    transform: scale(1.04);
 }
-@keyframes pulse-record {
-    0%, 100% { box-shadow: 0 0 0 8px rgba(231,76,60,0.2); }
-    50%       { box-shadow: 0 0 0 14px rgba(231,76,60,0.07); }
+/* Travado (arraste 20px): anel pulsante leve */
+.btn-mic--locked {
+    opacity: 0.85;
+    box-shadow: 0 0 0 6px rgba(46,204,113,0.35);
+    animation: pulse-locked 1s infinite;
+}
+@keyframes pulse-locked {
+    0%, 100% { box-shadow: 0 0 0 6px rgba(46,204,113,0.35); }
+    50%       { box-shadow: 0 0 0 12px rgba(46,204,113,0.1); }
 }
 .btn-send--hidden,
 .btn-mic--hidden { display: none !important; }
