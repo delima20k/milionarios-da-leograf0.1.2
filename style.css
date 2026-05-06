@@ -1721,31 +1721,8 @@ body {
 .chat-textarea::placeholder { color: #aaa; }
 
 .btn-send {
-    width: 42px;
-    height: 42px;
-    background: var(--cor-primaria);
-    border: none;
-    border-radius: 50%;
-    color: #fff;
-    font-size: 17px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: background 0.2s, transform 0.1s;
-}
-
-.btn-send:hover { background: #27ae60; transform: scale(1.08); }
-.btn-send:active { transform: scale(0.95); }
-
-/* ========================================
-   🎤 BOTÃO MIC — circular estilo WhatsApp
-   ======================================== */
-.btn-mic {
-    width: 42px;
-    height: 42px;
-    min-width: 42px;
+    width: 48px;
+    height: 48px;
     background: var(--cor-primaria);
     border: none;
     border-radius: 50%;
@@ -1756,35 +1733,82 @@ body {
     justify-content: center;
     cursor: pointer;
     flex-shrink: 0;
-    transition: background 0.15s, transform 0.1s;
+    transition: background 0.2s, transform 0.1s;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.btn-send:hover { background: #27ae60; transform: scale(1.08); }
+.btn-send:active { transform: scale(0.92); }
+
+/* ========================================
+   🎤 BOTÃO MIC — circular estilo WhatsApp
+   ======================================== */
+.btn-mic {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    background: var(--cor-primaria);
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
     user-select: none;
     -webkit-user-select: none;
     touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+    /* Área de toque ampliada sem alterar tamanho visual */
+    position: relative;
 }
-.btn-mic:hover  { background: #27ae60; transform: scale(1.08); }
-/* Gravando normal: opacidade reduzida */
+.btn-mic::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+}
+.btn-mic:hover  { background: #27ae60; transform: scale(1.1); }
+.btn-mic:active { transform: scale(0.92); }
+
+/* Gravando: vermelho pulsante — feedback claro */
 .btn-mic--recording {
-    opacity: 0.55;
-    transform: scale(1.04);
+    background: #e74c3c !important;
+    opacity: 1;
+    transform: scale(1.18);
+    box-shadow: 0 0 0 8px rgba(231,76,60,0.35);
+    animation: pulse-rec 0.9s ease-in-out infinite;
 }
-/* Travado (arraste 20px): anel pulsante leve */
+@keyframes pulse-rec {
+    0%, 100% { box-shadow: 0 0 0 8px rgba(231,76,60,0.35); }
+    50%       { box-shadow: 0 0 0 16px rgba(231,76,60,0.1); }
+}
+
+/* Travado (arraste 20px para cima): anel verde pulsante */
 .btn-mic--locked {
-    opacity: 0.85;
-    box-shadow: 0 0 0 6px rgba(46,204,113,0.35);
-    animation: pulse-locked 1s infinite;
+    background: #e74c3c !important;
+    opacity: 1;
+    box-shadow: 0 0 0 8px rgba(46,204,113,0.45);
+    animation: pulse-locked 1s ease-in-out infinite;
 }
 @keyframes pulse-locked {
-    0%, 100% { box-shadow: 0 0 0 6px rgba(46,204,113,0.35); }
-    50%       { box-shadow: 0 0 0 12px rgba(46,204,113,0.1); }
+    0%, 100% { box-shadow: 0 0 0 8px rgba(46,204,113,0.45); }
+    50%       { box-shadow: 0 0 0 16px rgba(46,204,113,0.12); }
 }
+
 .btn-send--hidden,
 .btn-mic--hidden { display: none !important; }
 
 /* Wrapper que mantém mic e send no mesmo slot — direita do textarea */
 .chat-btn-wrap {
     position: relative;
-    width: 42px;
-    height: 42px;
+    width: 48px;
+    height: 48px;
     flex-shrink: 0;
 }
 .chat-btn-wrap .btn-mic,

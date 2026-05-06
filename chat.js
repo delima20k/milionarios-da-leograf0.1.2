@@ -339,7 +339,9 @@ class ChatApp {
         const colPath = 'privateChats/' + chatId + '/messages';
         await addDoc(collection(this.#db, colPath), {
             uid: this.#currentUser.uid, name: this.#getDisplayName(),
-            photoURL: this.#currentUser.photoURL || '', text, createdAt: serverTimestamp()
+            photoURL: this.#currentUser.photoURL || '', text,
+            receiverUid: this.#privatePeer.uid,
+            createdAt: serverTimestamp()
         });
     }
 
@@ -654,7 +656,7 @@ class ChatApp {
                 this.#isRecording = false;
                 this.#updateMicUI(chatType, false);
             };
-            this.#mediaRecorder.start();
+            this.#mediaRecorder.start(100);  // timeslice 100ms: garante dados mesmo em gravações rápidas
             this.#isRecording = true;
             this.#updateMicUI(chatType, true);
         } catch { alert('Permita o acesso ao microfone para enviar áudios.'); }
@@ -688,6 +690,7 @@ class ChatApp {
             await addDoc(collection(this.#db, 'messages'), msgData);
         } else if (chatType === 'private' && this.#privatePeer) {
             const chatId = [this.#currentUser.uid, this.#privatePeer.uid].sort().join('_');
+            msgData.receiverUid = this.#privatePeer.uid;
             await addDoc(collection(this.#db, 'privateChats/' + chatId + '/messages'), msgData);
         }
     }
@@ -900,18 +903,21 @@ class ChatApp {
                 startRec();
             }, { passive: false });
             btn.addEventListener('touchmove', e => {
+                e.preventDefault();
                 if (!this.#isRecording || locked) return;
                 if (startY - e.touches[0].clientY >= 20) setLocked(true);
-            }, { passive: true });
-            btn.addEventListener('touchend', () => {
+            }, { passive: false });
+            btn.addEventListener('touchend', e => {
+                e.preventDefault();
                 if (locked) return;
                 stopRec();
-            });
-            btn.addEventListener('touchcancel', () => {
+            }, { passive: false });
+            btn.addEventListener('touchcancel', e => {
+                e.preventDefault();
                 locked = false;
                 btn.classList.remove('btn-mic--locked');
                 stopRec();
-            });
+            }, { passive: false });
         };
         bindMic('btnMicGroup',   'group');
         bindMic('btnMicPrivate', 'private');

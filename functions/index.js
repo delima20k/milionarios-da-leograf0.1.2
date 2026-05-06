@@ -1,14 +1,16 @@
 // ============================================================
 // 🎱 Cloud Functions — Milionários da Leograf
 //    Verifica resultado da Lotofácil e envia push via FCM
+//    + Notificações de chat em tempo real
 // ============================================================
 'use strict';
 
-const { onSchedule }  = require('firebase-functions/v2/scheduler');
-const { logger }      = require('firebase-functions');
-const { initializeApp }  = require('firebase-admin/app');
+const { onSchedule }       = require('firebase-functions/v2/scheduler');
+const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { logger }           = require('firebase-functions');
+const { initializeApp }    = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-const { getMessaging }   = require('firebase-admin/messaging');
+const { getMessaging }     = require('firebase-admin/messaging');
 
 initializeApp();
 
@@ -158,3 +160,90 @@ async function _verificarEEnviar() {
     });
     logger.info(`✅ Notificação enviada — concurso ${concurso}`);
 }
+
+// ── Helpers de push para o chat ───────────────────────────────
+
+async function _sendChatPush(tokens, title, body, tag) {
+    if (!tokens || tokens.length === 0) return;
+    const lotes = [];
+    for (let i = 0; i < tokens.length; i += 500) lotes.push(tokens.slice(i, i + 500));
+
+    for (const lote of lotes) {
+        const res = await getMessaging().sendEachForMulticast({
+            tokens: lote,
+            notification: { title, body },
+            webpush: {
+                notification: {
+                    title, body,
+                    icon:     APP_URL + 'icon-192.png',
+                    badge:    APP_URL + 'icon-192.png',
+                    tag:      'chat-' + tag,
+                    renotify: true,
+                    vibrate:  [200, 100, 200]
+                },
+                fcmOptions: { link: APP_URL }
+            },
+            android: { priority: 'high', notification: { sound: 'default' } },
+            apns:    { payload: { aps: { sound: 'default', badge: 1 } } }
+        });
+
+        // Remove tokens inválidos
+        const batch = db.batch();
+        res.responses.forEach((r, i) => {
+            if (!r.success) {
+                const code = r.error?.code || '';
+                if (code.includes('registration-token-not-registered') ||
+                    code.includes('invalid-registration-token')) {
+                    batch.delete(db.collection('fcmTokens').doc(lote[i]));
+                }
+            }
+        });
+        await batch.commit();
+    }
+}
+
+// ── Notificação: mensagem no chat do grupo ───────────────────
+exports.onGroupMessage = onDocumentCreated(
+    { document: 'messages/{msgId}', region: 'us-central1' },
+    async (event) => {
+        const data = event.data?.data();
+        if (!data) return;
+
+        const senderUid  = data.uid || '';
+        const senderName = data.name || 'Alguém';
+        const text       = data.type === 'audio' ? '🎤 Áudio' : (data.text || '');
+
+        // Busca todos os tokens exceto o do remetente
+        const snap   = await db.collection('fcmTokens').get();
+        const tokens = snap.docs
+            .filter(d => d.data().uid !== senderUid)
+            .map(d => d.id);
+
+        if (tokens.length === 0) return;
+        await _sendChatPush(tokens, `💬 Grupo — ${senderName}`, text, 'grupo');
+        logger.info(`[Chat Grupo] Push enviado para ${tokens.length} token(s)`);
+    }
+);
+
+// ── Notificação: mensagem privada ─────────────────────────────
+exports.onPrivateMessage = onDocumentCreated(
+    { document: 'privateChats/{chatId}/messages/{msgId}', region: 'us-central1' },
+    async (event) => {
+        const data = event.data?.data();
+        if (!data) return;
+
+        const receiverUid = data.receiverUid;
+        if (!receiverUid) return;
+
+        const senderName = data.name || 'Alguém';
+        const text       = data.type === 'audio' ? '🎤 Áudio' : (data.text || '');
+
+        // Busca os tokens do destinatário
+        const snap   = await db.collection('fcmTokens').where('uid', '==', receiverUid).get();
+        const tokens = snap.docs.map(d => d.id);
+
+        if (tokens.length === 0) return;
+        await _sendChatPush(tokens, `💬 ${senderName}`, text, 'privado');
+        logger.info(`[Chat Privado] Push enviado para ${tokens.length} token(s) do uid ${receiverUid}`);
+    }
+);
