@@ -1994,8 +1994,9 @@ body {
 /* ─── Cards de usuários ─── */
 .chat-user-cards {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    overflow-y: auto;
 }
 
 .chat-user-card {
