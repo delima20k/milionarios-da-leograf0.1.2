@@ -564,14 +564,32 @@ class ChatApp {
     async #startVoiceRecord(chatType) {
         if (this.#isRecording) return;
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl:  true,
+                    sampleRate:       48000,
+                    channelCount:     1
+                }
+            });
             this.#audioChunks = [];
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-            this.#mediaRecorder = new MediaRecorder(stream, { mimeType });
+            // Codec de maior qualidade disponível
+            const PREFERRED = [
+                'audio/webm;codecs=opus',
+                'audio/webm',
+                'audio/ogg;codecs=opus',
+                'audio/mp4'
+            ];
+            const mimeType = PREFERRED.find(t => MediaRecorder.isTypeSupported(t)) || '';
+            const options  = mimeType
+                ? { mimeType, audioBitsPerSecond: 128000 }
+                : { audioBitsPerSecond: 128000 };
+            this.#mediaRecorder = new MediaRecorder(stream, options);
             this.#mediaRecorder.ondataavailable = e => { if (e.data.size > 0) this.#audioChunks.push(e.data); };
             this.#mediaRecorder.onstop = async () => {
                 stream.getTracks().forEach(t => t.stop());
-                const blob = new Blob(this.#audioChunks, { type: mimeType });
+                const blob = new Blob(this.#audioChunks, { type: mimeType || 'audio/webm' });
                 this.#audioChunks = [];
                 await this.#uploadVoiceMsg(blob, chatType);
                 this.#isRecording = false;
@@ -782,8 +800,9 @@ class ChatApp {
             btn.addEventListener('mousedown',  e => { e.preventDefault(); start(); });
             btn.addEventListener('mouseup',    stop);
             btn.addEventListener('mouseleave', () => { if (this.#isRecording) stop(); });
-            btn.addEventListener('touchstart', e => { e.preventDefault(); start(); }, { passive: false });
-            btn.addEventListener('touchend',   stop);
+            btn.addEventListener('touchstart',  e => { e.preventDefault(); start(); }, { passive: false });
+            btn.addEventListener('touchend',    stop);
+            btn.addEventListener('touchcancel', stop);
         };
         bindMic('btnMicGroup',   'group');
         bindMic('btnMicPrivate', 'private');
