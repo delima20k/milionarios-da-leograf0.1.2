@@ -82,18 +82,18 @@ document.body.appendChild(overlay);
 function abrirMenu() {
     hamburger.classList.add('active');
     sideMenu.classList.add('active');
+    sideMenu.style.pointerEvents = 'auto'; // força bypass do CSS cacheado
     overlay.classList.add('active');
-    document.body.style.overflow = 'hidden'; // 🔒 Bloqueia scroll da página
-    document.body.style.touchAction = 'none'; // 🔒 Bloqueia touch scroll
+    document.body.style.overflow = 'hidden';
 }
 
 // Função para fechar menu (libera scroll da página)
 function fecharMenu() {
     hamburger.classList.remove('active');
     sideMenu.classList.remove('active');
+    sideMenu.style.pointerEvents = '';
     overlay.classList.remove('active');
-    document.body.style.overflow = ''; // 🔓 Libera scroll da página
-    document.body.style.touchAction = ''; // 🔓 Libera touch scroll
+    document.body.style.overflow = '';
 }
 
 // Toggle do menu
