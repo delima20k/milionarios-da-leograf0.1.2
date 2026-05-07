@@ -198,7 +198,7 @@ async function _sendChatPush(tokens, title, body, chatType, senderId) {
             apns: { payload: { aps: { sound: 'default', badge: 1, contentAvailable: true } } }
         });
 
-        // Remove tokens inválidos
+        // Remove tokens inválidos do Firestore
         const batch = db.batch();
         res.responses.forEach((r, i) => {
             if (!r.success) {
@@ -214,21 +214,21 @@ async function _sendChatPush(tokens, title, body, chatType, senderId) {
     }
 }
 
-// ── Notificação: mensagem no chat do grupo ───────────────────
+// ── Trigger: nova mensagem no grupo ─────────────────────────
+// Envia push para todos os usuários exceto o remetente.
 exports.onGroupMessage = onDocumentCreated(
     { document: 'messages/{msgId}', region: 'us-central1' },
     async (event) => {
         const data = event.data?.data();
-        if (!data) return;
+        if (!data?.text && data?.type !== 'audio') return;
 
-        const senderUid  = data.uid || '';
+        const senderUid  = data.uid  || '';
         const senderName = data.name || 'Alguém';
         const text       = data.type === 'audio' ? '🎤 Áudio' : (data.text || '');
 
-        // Busca todos os tokens exceto o do remetente
         const snap   = await db.collection('fcmTokens').get();
         const tokens = snap.docs
-            .filter(d => d.data().uid !== senderUid)
+            .filter(d => d.data().uid && d.data().uid !== senderUid)
             .map(d => d.id);
 
         if (tokens.length === 0) return;
@@ -237,20 +237,22 @@ exports.onGroupMessage = onDocumentCreated(
     }
 );
 
-// ── Notificação: mensagem privada ─────────────────────────────
+// ── Trigger: nova mensagem privada ────────────────────────────
+// chatId = uid1_uid2 (ordenados). Identifica destinatário pelo chatId.
 exports.onPrivateMessage = onDocumentCreated(
     { document: 'privateChats/{chatId}/messages/{msgId}', region: 'us-central1' },
     async (event) => {
         const data = event.data?.data();
-        if (!data) return;
+        if (!data?.text && data?.type !== 'audio') return;
 
-        const receiverUid = data.receiverUid;
+        const chatId      = event.params.chatId;
+        const senderUid   = data.uid || '';
+        const receiverUid = chatId.split('_').find(u => u !== senderUid);
         if (!receiverUid) return;
 
         const senderName = data.name || 'Alguém';
         const text       = data.type === 'audio' ? '🎤 Áudio' : (data.text || '');
 
-        // Busca os tokens do destinatário
         const snap   = await db.collection('fcmTokens').where('uid', '==', receiverUid).get();
         const tokens = snap.docs.map(d => d.id);
 
