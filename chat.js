@@ -99,9 +99,11 @@ class ChatApp {
                 if (perm !== 'granted') return;
             }
 
-            // Obtém token FCM — substitua VAPID_KEY pela chave gerada no Firebase Console
-            // Project Settings → Cloud Messaging → Web Push certificates → Generate key pair
-            const VAPID_KEY = 'COLE_SUA_VAPID_KEY_AQUI';
+            // Obtém token FCM
+            // ⚠️  VAPID_KEY: gere em Firebase Console →
+            //     Configurações do projeto → Cloud Messaging →
+            //     Certificados push da Web → Gerar par de chaves
+            const VAPID_KEY = 'BG0Ua4-wcya75XDbahFWpwqs61cLiIs63OiW0Xa2jFiVcCUJ_L2Kse8dI8DGaz8nStPOykMnN2L97Q1gk7a1les';
             const token = await getToken(this.#messaging, {
                 vapidKey: VAPID_KEY,
                 serviceWorkerRegistration: swReg
@@ -529,19 +531,24 @@ class ChatApp {
     }
 
     #notificar(nome, texto) {
-        const chatOpen = document.getElementById('sideMenu')?.classList.contains('active');
-        if (chatOpen) {
+        // Verifica se o painel de mensagens relevante está visível
+        const groupVisible   = !document.getElementById('chatGroupPanel')?.classList.contains('chat-conversation--hidden');
+        const privateVisible = !document.getElementById('chatPrivatePanel')?.classList.contains('chat-conversation--hidden');
+        const panelAtivo     = groupVisible || privateVisible;
+
+        this.#audio.currentTime = 0;
+        this.#audio.play().catch(() => {});
+
+        // Som mais chamativo quando o painel de chat não está visível
+        if (!panelAtivo) {
             this.#audioIn.currentTime = 0;
             this.#audioIn.play().catch(() => {});
             setTimeout(() => { this.#audioIn.pause(); this.#audioIn.currentTime = 0; }, 1000);
-            return;
         }
-        this.#audio.currentTime = 0;
-        this.#audio.play().catch(() => {});
+
         if (!('Notification' in window) || Notification.permission !== 'granted') return;
         const title = '💬 ' + nome;
         const body  = texto || '🎵 Mensagem de áudio';
-        // Usa SW showNotification: entrega imediata mesmo com aba em segundo plano
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.ready
                 .then(reg => reg.showNotification(title, {
