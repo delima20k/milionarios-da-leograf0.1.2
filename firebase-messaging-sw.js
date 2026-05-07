@@ -1,5 +1,6 @@
 // ============================================================
-// 🔔 FIREBASE MESSAGING — Service Worker (background push)
+// 🔔 FIREBASE MESSAGING — Service Worker (background push) v2
+// Tags separadas por tipo: chat-grupo, chat-privado-{uid}, lotofacil-resultado
 // ============================================================
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
@@ -17,21 +18,37 @@ const messaging = firebase.messaging();
 
 const APP_URL = 'https://delima20k.github.io/milionarios-da-leograf0.1.2/';
 
-// ── Mensagem em background (app fechado / aba inativa) ──────
+// ── Determina tag correta por tipo de notificação ────────────
+function resolveTag(data) {
+    if (data.chatType === 'grupo')   return 'chat-grupo';
+    if (data.chatType === 'privado') return 'chat-privado-' + (data.senderId || 'unknown');
+    return 'lotofacil-resultado';
+}
+
+function resolveVibrate(data) {
+    if (data.chatType) return [200, 100, 200];
+    return [300, 100, 300, 100, 600];
+}
+
+// ── Mensagem em background (app fechado / aba inativa) ───────
 messaging.onBackgroundMessage(payload => {
     const n    = payload.notification || {};
     const data = payload.data         || {};
     const title = n.title || '🎱 Milionários da Leograf';
     const body  = n.body  || data.body || '';
+    const tag   = resolveTag(data);
+    const url   = data.link || APP_URL;
+
+    console.log('[FCM-SW] Background message recebida. tag:', tag, 'tipo:', data.chatType || 'lotofacil');
 
     self.registration.showNotification(title, {
         body,
         icon:      APP_URL + 'icon-192.png',
         badge:     APP_URL + 'icon-192.png',
-        tag:       'lotofacil-resultado',
+        tag,
         renotify:  true,
-        vibrate:   [300, 100, 300, 100, 600],
-        data:      { url: APP_URL }
+        vibrate:   resolveVibrate(data),
+        data:      { url }
     });
 });
 

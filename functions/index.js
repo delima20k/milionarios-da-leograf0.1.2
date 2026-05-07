@@ -163,7 +163,7 @@ async function _verificarEEnviar() {
 
 // ── Helpers de push para o chat ───────────────────────────────
 
-async function _sendChatPush(tokens, title, body, tag) {
+async function _sendChatPush(tokens, title, body, chatType, senderId) {
     if (!tokens || tokens.length === 0) return;
     const lotes = [];
     for (let i = 0; i < tokens.length; i += 500) lotes.push(tokens.slice(i, i + 500));
@@ -172,19 +172,30 @@ async function _sendChatPush(tokens, title, body, tag) {
         const res = await getMessaging().sendEachForMulticast({
             tokens: lote,
             notification: { title, body },
+            // data messages garantem wake-up mesmo no Android Doze Mode
+            data: {
+                chatType:  chatType,          // 'grupo' | 'privado'
+                senderId:  senderId || '',
+                link:      APP_URL
+            },
             webpush: {
+                headers: { Urgency: 'high' },
                 notification: {
                     title, body,
                     icon:     APP_URL + 'icon-192.png',
                     badge:    APP_URL + 'icon-192.png',
-                    tag:      'chat-' + tag,
+                    tag:      'chat-' + chatType + (chatType === 'privado' ? '-' + (senderId || '') : ''),
                     renotify: true,
                     vibrate:  [200, 100, 200]
                 },
                 fcmOptions: { link: APP_URL }
             },
-            android: { priority: 'high', notification: { sound: 'default' } },
-            apns:    { payload: { aps: { sound: 'default', badge: 1 } } }
+            android: {
+                priority: 'high',
+                ttl:      '60s',
+                notification: { sound: 'default', channelId: 'chat-messages' }
+            },
+            apns: { payload: { aps: { sound: 'default', badge: 1, contentAvailable: true } } }
         });
 
         // Remove tokens inválidos
@@ -199,6 +210,7 @@ async function _sendChatPush(tokens, title, body, tag) {
             }
         });
         await batch.commit();
+        logger.info(`[Chat Push] ${chatType} → ${res.successCount} ok, ${res.failureCount} falhas`);
     }
 }
 
@@ -220,7 +232,7 @@ exports.onGroupMessage = onDocumentCreated(
             .map(d => d.id);
 
         if (tokens.length === 0) return;
-        await _sendChatPush(tokens, `💬 Grupo — ${senderName}`, text, 'grupo');
+        await _sendChatPush(tokens, `💬 Grupo — ${senderName}`, text, 'grupo', senderUid);
         logger.info(`[Chat Grupo] Push enviado para ${tokens.length} token(s)`);
     }
 );
@@ -243,7 +255,8 @@ exports.onPrivateMessage = onDocumentCreated(
         const tokens = snap.docs.map(d => d.id);
 
         if (tokens.length === 0) return;
-        await _sendChatPush(tokens, `💬 ${senderName}`, text, 'privado');
+        const senderUidPriv = data.uid || '';
+        await _sendChatPush(tokens, `💬 ${senderName}`, text, 'privado', senderUidPriv);
         logger.info(`[Chat Privado] Push enviado para ${tokens.length} token(s) do uid ${receiverUid}`);
     }
 );

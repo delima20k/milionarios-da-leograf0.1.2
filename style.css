@@ -5442,3 +5442,113 @@ body {
     0%, 45%, 55%, 100% { transform: scaleY(1); }
     50% { transform: scaleY(0.1); }
 }
+
+/* ============================================================
+   🔌 CONNECTION BANNER (offline/online indicator)
+   ============================================================ */
+.conn-banner {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 10000;
+    text-align: center;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .3px;
+    transition: transform .3s ease, opacity .3s ease;
+}
+.conn-banner--hidden {
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
+}
+.conn-banner[data-state="offline"] {
+    background: #d32f2f;
+    color: #fff;
+}
+.conn-banner[data-state="online"] {
+    background: #388e3c;
+    color: #fff;
+}
+
+/* ============================================================
+   ✉️ MESSAGE STATUS TICKS
+   ============================================================ */
+.chat-msg-status {
+    display: inline-block;
+    font-size: 11px;
+    margin-left: 4px;
+    vertical-align: middle;
+    color: #90a4ae;
+    cursor: default;
+    user-select: none;
+    transition: color .2s;
+}
+.chat-msg-status[data-status="read"] {
+    color: #1976d2;
+}
+.chat-msg-status[data-status="failed"] {
+    color: #d32f2f;
+    cursor: pointer;
+}
+.chat-msg-status[data-status="offline"] {
+    color: #f57c00;
+}
+
+/* Mensagem otimista ainda sendo enviada */
+.chat-msg--sending {
+    opacity: 0.65;
+}
+
+/* ============================================================
+   📄 LOAD MORE BUTTON (paginação)
+   ============================================================ */
+.chat-load-more {
+    display: block;
+    width: calc(100% - 24px);
+    margin: 8px 12px;
+    padding: 8px 0;
+    background: none;
+    border: 1px solid rgba(255,255,255,.15);
+    border-radius: 20px;
+    color: #b0bec5;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: background .2s, color .2s;
+}
+.chat-load-more:hover {
+    background: rgba(255,255,255,.08);
+    color: #fff;
+}
+
+/* ============================================================
+   ⌨️ TYPING INDICATOR
+   ============================================================ */
+.chat-user-typing {
+    display: none;
+    font-size: 10px;
+    color: #80cbc4;
+    font-style: italic;
+    margin-left: 4px;
+}
+.chat-user-typing.typing--active {
+    display: inline;
+    animation: typing-blink 1s infinite alternate;
+}
+@keyframes typing-blink {
+    from { opacity: 1; }
+    to   { opacity: 0.3; }
+}
+
+/* ============================================================
+   🟢 PRESENCE DOT on user cards
+   ============================================================ */
+.chat-user-card-presence {
+    color: #546e7a;
+    font-size: 10px;
+    margin-left: 4px;
+}
+.chat-user-card-presence.chat-user-card-online {
+    color: #66bb6a;
+}

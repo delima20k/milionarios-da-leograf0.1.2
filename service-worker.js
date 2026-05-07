@@ -148,8 +148,10 @@ self.addEventListener('sync', event => {
 
 async function doBackgroundSync() {
   try {
-    // Implementar sincronização de dados se necessário
-    console.log('[SW] Sincronização concluída');
+    // Sinaliza todos os clientes abertos para drenar a fila offline (IndexedDB)
+    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    allClients.forEach(c => c.postMessage({ type: 'DRAIN_QUEUE' }));
+    console.log(`[SW] Background Sync → DRAIN_QUEUE enviado para ${allClients.length} cliente(s)`);
   } catch (error) {
     console.error('[SW] Erro na sincronização:', error);
   }
