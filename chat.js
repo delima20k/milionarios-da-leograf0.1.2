@@ -297,7 +297,7 @@ class ChatApp {
             });
             if (first) first = false;
             this.#scrollBottom(msgs);
-        });
+        }, err => this.#showChatError('Erro ao carregar mensagens do grupo: ' + err.code));
     }
 
     async #sendGroupMessage() {
@@ -307,10 +307,14 @@ class ChatApp {
         input.value = ''; input.style.height = 'auto';
         document.getElementById('btnMicGroup')?.classList.remove('btn-mic--hidden');
         document.getElementById('btnSendGroup')?.classList.add('btn-send--hidden');
-        await addDoc(collection(this.#db, 'messages'), {
-            uid: this.#currentUser.uid, name: this.#getDisplayName(),
-            photoURL: this.#currentUser.photoURL || '', text, createdAt: serverTimestamp()
-        });
+        try {
+            await addDoc(collection(this.#db, 'messages'), {
+                uid: this.#currentUser.uid, name: this.#getDisplayName(),
+                photoURL: this.#currentUser.photoURL || '', text, createdAt: serverTimestamp()
+            });
+        } catch (e) {
+            this.#showChatError('Erro ao enviar mensagem: ' + e.code);
+        }
     }
 
     #subscribePrivateMessages(peerUid) {
@@ -326,7 +330,7 @@ class ChatApp {
             });
             if (first) first = false;
             this.#scrollBottom(msgs);
-        });
+        }, err => this.#showChatError('Erro ao carregar mensagens privadas: ' + err.code));
     }
 
     async #sendPrivateMessage() {
@@ -339,12 +343,16 @@ class ChatApp {
         document.getElementById('btnSendPrivate')?.classList.add('btn-send--hidden');
         const chatId  = [this.#currentUser.uid, this.#privatePeer.uid].sort().join('_');
         const colPath = 'privateChats/' + chatId + '/messages';
-        await addDoc(collection(this.#db, colPath), {
-            uid: this.#currentUser.uid, name: this.#getDisplayName(),
-            photoURL: this.#currentUser.photoURL || '', text,
-            receiverUid: this.#privatePeer.uid,
-            createdAt: serverTimestamp()
-        });
+        try {
+            await addDoc(collection(this.#db, colPath), {
+                uid: this.#currentUser.uid, name: this.#getDisplayName(),
+                photoURL: this.#currentUser.photoURL || '', text,
+                receiverUid: this.#privatePeer.uid,
+                createdAt: serverTimestamp()
+            });
+        } catch (e) {
+            this.#showChatError('Erro ao enviar mensagem: ' + e.code);
+        }
     }
 
     #renderMsg(container, id, data, notify, type) {
@@ -586,6 +594,15 @@ class ChatApp {
     }
 
     #scrollBottom(el) { if (el) el.scrollTop = el.scrollHeight; }
+
+    #showChatError(msg) {
+        console.error('[Chat]', msg);
+        const toast = document.createElement('div');
+        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#c0392b;color:#fff;padding:10px 18px;border-radius:8px;z-index:9999;font-size:14px;max-width:90vw;text-align:center';
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 6000);
+    }
 
     #showError(msg) {
         const el = document.getElementById('chatAuthError');
