@@ -260,6 +260,7 @@ class ChatApp {
     #unsubUserDoc  = null;
     #unsubOnline   = null;
     #unsubUsers    = null;
+    #unsubInbox    = null;
     #unsubCallIn   = null;
     #unsubCallOut  = null;
 
@@ -436,6 +437,7 @@ class ChatApp {
         this.#presence.start(this.#currentUser.uid);
         this.#subscribeOnline();
         this.#subscribeUsers();
+        this.#subscribeInbox();
         this.#listenForIncomingCalls();
         if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
     }
@@ -556,6 +558,7 @@ class ChatApp {
         document.getElementById('chatPrivateMessages').innerHTML = '';
         this.#privOldestDoc = null;
         this.#subscribePrivateMessages(peer.uid);
+        this.#clearInboxBadge(peer.uid);
     }
 
     #backToHome() {
@@ -714,6 +717,15 @@ class ChatApp {
             this.#confirmedIds.add('priv-' + docRef.id);
             this.#latency.markConfirmed(tempId, 'priv-' + docRef.id, Date.now() - sendMs);
             this.#confirmPendingMessage(tempId, 'priv-' + docRef.id);
+            // Atualiza metadado da conversa para notificar o destinatário na home
+            setDoc(doc(this.#db, 'privateChats', chatId), {
+                lastText:    text,
+                senderUid:   this.#currentUser.uid,
+                senderName:  this.#getDisplayName(),
+                receiverUid: this.#privatePeer.uid,
+                updatedAt:   serverTimestamp(),
+                unreadFor:   this.#privatePeer.uid
+            }, { merge: true }).catch(() => {});
         } catch (e) {
             console.error('[Chat] Erro ao enviar privado:', e);
             this.#markMsgStatus(tempId, 'failed');
@@ -935,6 +947,39 @@ class ChatApp {
             const chatId = [this.#currentUser.uid, this.#privatePeer.uid].sort().join('_');
             await deleteDoc(doc(this.#db, 'privateChats/' + chatId + '/messages', id));
         }
+    }
+
+    // ── Inbox (mensagens privadas não lidas) ─────────────
+    #subscribeInbox() {
+        if (this.#unsubInbox) return;
+        const q = query(
+            collection(this.#db, 'privateChats'),
+            where('unreadFor', '==', this.#currentUser.uid)
+        );
+        this.#unsubInbox = onSnapshot(q, snap => {
+            snap.docChanges().forEach(change => {
+                const data      = change.doc.data();
+                const senderUid = data.senderUid;
+                const wrap      = this.#userCardMap.get(senderUid);
+                if (!wrap) return;
+                if (change.type === 'added' || change.type === 'modified') {
+                    if (!wrap.querySelector('.chat-inbox-badge')) {
+                        const badge = document.createElement('span');
+                        badge.className   = 'chat-inbox-badge';
+                        badge.textContent = '🔴';
+                        wrap.querySelector('.chat-user-card')?.appendChild(badge);
+                    }
+                } else if (change.type === 'removed') {
+                    wrap.querySelector('.chat-inbox-badge')?.remove();
+                }
+            });
+        });
+    }
+
+    #clearInboxBadge(peerUid) {
+        this.#userCardMap.get(peerUid)?.querySelector('.chat-inbox-badge')?.remove();
+        const chatId = [this.#currentUser.uid, peerUid].sort().join('_');
+        updateDoc(doc(this.#db, 'privateChats', chatId), { unreadFor: '' }).catch(() => {});
     }
 
     // ── Presence & Online ─────────────────────────────────
@@ -1294,6 +1339,7 @@ class ChatApp {
         this.#unsubUserDoc?.();  this.#unsubUserDoc  = null;
         this.#unsubOnline?.();   this.#unsubOnline   = null;
         this.#unsubUsers?.();    this.#unsubUsers    = null;
+        this.#unsubInbox?.();    this.#unsubInbox    = null;
         this.#unsubCallIn?.();   this.#unsubCallIn   = null;
         this.#userCardMap.clear();
         this.#pendingMessages.clear();

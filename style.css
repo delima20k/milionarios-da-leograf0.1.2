@@ -2195,6 +2195,17 @@ body {
     line-height: 1;
 }
 
+.chat-inbox-badge {
+    font-size: 11px;
+    line-height: 1;
+    animation: chat-badge-pop 0.25s ease;
+}
+
+@keyframes chat-badge-pop {
+    from { transform: scale(0); opacity: 0; }
+    to   { transform: scale(1); opacity: 1; }
+}
+
 /* ========================================
    💬 CHAT — TELA DE CONVERSA
    ======================================== */

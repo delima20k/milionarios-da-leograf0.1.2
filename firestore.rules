@@ -15,6 +15,19 @@ service cloud.firestore {
 
     // ── Mensagens privadas ─────────────────────────────────
     // chatId = uid1_uid2 (ordenados). Apenas os dois participantes têm acesso.
+    // O documento pai (metadado da conversa: unreadFor, lastText, etc.) segue a mesma regra.
+    // allow list: necessário para a query where('unreadFor','==',uid) do inbox
+    match /privateChats/{chatId} {
+      allow get    : if request.auth != null
+                     && (chatId.matches(request.auth.uid + '_.*')
+                         || chatId.matches('.*_' + request.auth.uid));
+      allow list   : if request.auth != null
+                     && (resource.data.receiverUid == request.auth.uid
+                         || resource.data.senderUid == request.auth.uid);
+      allow write  : if request.auth != null
+                     && (chatId.matches(request.auth.uid + '_.*')
+                         || chatId.matches('.*_' + request.auth.uid));
+    }
     match /privateChats/{chatId}/messages/{msgId} {
       allow read, create : if request.auth != null
                            && (chatId.matches(request.auth.uid + '_.*')

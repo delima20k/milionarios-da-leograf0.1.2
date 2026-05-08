@@ -3,6 +3,7 @@ const STATIC_CACHE = 'milionarios-static-v4.3';
 const DYNAMIC_CACHE = 'milionarios-dynamic-v4.3';
 
 // Recursos essenciais para cache
+// Áudios (.mp3) removidos do cache: Range Requests (HTTP 206) são incompatíveis com cache.put()
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -10,8 +11,6 @@ const CORE_ASSETS = [
   './script.js',
   './chat.js',
   './firebase-messaging-sw.js',
-  './notification.mp3',
-  './ring-chat.mp3',
   './manifest.json',
   './logo.svg'
 ];
@@ -85,13 +84,14 @@ self.addEventListener('fetch', event => {
           }
           
           // Se não estiver no cache, busca da rede e cacheia
+          // Só cacheia respostas completas (status 200); 206 Partial Content causa erro
           return fetch(event.request)
             .then(response => {
-              const responseClone = response.clone();
-              caches.open(STATIC_CACHE)
-                .then(cache => {
-                  cache.put(event.request, responseClone);
-                });
+              if (response.status === 200) {
+                const responseClone = response.clone();
+                caches.open(STATIC_CACHE)
+                  .then(cache => cache.put(event.request, responseClone));
+              }
               return response;
             });
         })
