@@ -124,7 +124,7 @@ async function enviarParaTodos({ titulo, corpo }) {
     }
 }
 
-// ── Função principal — 21:30 BRT ─────────────────────────────
+// ── Função principal — 21:40 BRT ─────────────────────────────
 exports.checkLotofacilResult = onSchedule(
     { schedule: '40 21 * * *', timeZone: 'America/Sao_Paulo', retryCount: 2 },
     async () => {
