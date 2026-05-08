@@ -18,7 +18,7 @@ import {
     getStorage, ref, uploadBytes, getDownloadURL
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js';
 import {
-    getMessaging, getToken, onMessage, onTokenRefresh
+    getMessaging, getToken, onMessage
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js';
 
 const FIREBASE_CONFIG = {
@@ -1069,11 +1069,13 @@ class ChatApp {
             const token = await getToken(this.#messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
                 await this.#saveFCMToken(token);
-                // Auto-refresh do token
-                onTokenRefresh(this.#messaging, async () => {
-                    const newToken = await getToken(this.#messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
-                    if (newToken) await this.#saveFCMToken(newToken);
-                });
+                // Renova o token a cada 7 dias (SDK modular não tem onTokenRefresh)
+                setInterval(async () => {
+                    try {
+                        const renewed = await getToken(this.#messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
+                        if (renewed) await this.#saveFCMToken(renewed);
+                    } catch { /* silencioso */ }
+                }, 7 * 24 * 60 * 60 * 1000);
             }
             // Foreground push com tag correta por tipo
             onMessage(this.#messaging, payload => {
