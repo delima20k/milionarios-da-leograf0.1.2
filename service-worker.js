@@ -1,6 +1,6 @@
-const CACHE_NAME = 'milionarios-v4.2';
-const STATIC_CACHE = 'milionarios-static-v4.2';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v4.2';
+const CACHE_NAME = 'milionarios-v4.3';
+const STATIC_CACHE = 'milionarios-static-v4.3';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v4.3';
 
 // Recursos essenciais para cache
 const CORE_ASSETS = [
@@ -69,7 +69,11 @@ self.addEventListener('activate', event => {
 // e Network First para API calls
 self.addEventListener('fetch', event => {
   const requestUrl = new URL(event.request.url);
-  
+
+  // Nunca cachear requisições POST, PUT, DELETE, PATCH nem extensões do browser
+  if (event.request.method !== 'GET') return;
+  if (!event.request.url.startsWith('http')) return;
+
   // Estratégia para recursos estáticos (Cache First)
   if (CORE_ASSETS.some(asset => event.request.url.includes(asset.replace('./', '')))) {
     event.respondWith(
