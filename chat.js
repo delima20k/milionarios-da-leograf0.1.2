@@ -1409,5 +1409,3 @@ if ('serviceWorker' in navigator) {
         }
     });
 }
-    appId:             '1:411362756429:web:55059c1f443fe06a1bd904'
-};
