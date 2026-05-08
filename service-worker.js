@@ -1,11 +1,11 @@
-const CACHE_NAME = 'milionarios-v4.3';
-const STATIC_CACHE = 'milionarios-static-v4.3';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v4.3';
+const CACHE_NAME = 'milionarios-v4.4';
+const STATIC_CACHE = 'milionarios-static-v4.4';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v4.4';
 
 // Recursos essenciais para cache
 // Áudios (.mp3) removidos do cache: Range Requests (HTTP 206) são incompatíveis com cache.put()
+// './' removido: asset.replace('./','') == '' → url.includes('') == sempre true (bug)
 const CORE_ASSETS = [
-  './',
   './index.html',
   './style.css',
   './script.js',
@@ -18,6 +18,19 @@ const CORE_ASSETS = [
 // URLs da API que podem ser cacheadas
 const API_CACHE_URLS = [
   /servicebus2\.caixa\.gov\.br\/portaldeloterias\/api\/lotofacil/
+];
+
+// Domínios que NUNCA devem ser cacheados — Firebase Auth, Firestore, Storage, etc.
+// Respostas desses domínios são dinâmicas e dependem de tokens; cachear quebra a autenticação.
+const NEVER_CACHE_DOMAINS = [
+  'identitytoolkit.googleapis.com',
+  'securetoken.googleapis.com',
+  'firestore.googleapis.com',
+  'firebasestorage.googleapis.com',
+  'fcm.googleapis.com',
+  'fcmregistrations.googleapis.com',
+  'accounts.google.com',
+  'oauth2.googleapis.com',
 ];
 
 // Instalação do Service Worker
@@ -73,8 +86,12 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith('http')) return;
 
+  // Domínios dinâmicos (Firebase Auth, Firestore, etc.) nunca devem ser interceptados
+  if (NEVER_CACHE_DOMAINS.some(domain => requestUrl.hostname === domain)) return;
+
   // Estratégia para recursos estáticos (Cache First)
-  if (CORE_ASSETS.some(asset => event.request.url.includes(asset.replace('./', '')))) {
+  // Compara pelo pathname final para evitar falsos positivos em outras origens
+  if (CORE_ASSETS.some(asset => requestUrl.pathname.endsWith(asset.replace('./', '')))) {
     event.respondWith(
       caches.match(event.request)
         .then(cachedResponse => {
