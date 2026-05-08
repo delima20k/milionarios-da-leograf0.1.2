@@ -281,6 +281,8 @@ class ChatApp {
 
     // Mapa de cards de usuário (update incremental)
     #userCardMap = new Map();
+    // Dados brutos dos usuários (para read receipts e typing)
+    #userDataMap = new Map();
 
     // Áudio
     #audio       = new Audio('./notification.mp3');
@@ -574,13 +576,35 @@ class ChatApp {
         this.#privOldestDoc = null;
         this.#subscribePrivateMessages(peer.uid);
         this.#clearInboxBadge(peer.uid);
+        // Sinaliza ao remetente que recebi e estou visualizando (read receipt)
+        if (this.#currentUser) {
+            updateDoc(doc(this.#db, 'users', this.#currentUser.uid), {
+                viewingChat: peer.uid,
+                [`deliveryMap.${peer.uid}`]: serverTimestamp()
+            }).catch(() => {});
+        }
+        // Aplica read receipt imediatamente se peer já tem o chat aberto conosco
+        const peerData = this.#userDataMap.get(peer.uid);
+        if (peerData) {
+            const msgs = document.getElementById('chatPrivateMessages');
+            if (peerData.viewingChat === this.#currentUser?.uid) {
+                setTimeout(() => this.#markAllOwnMsgsAs(msgs, 'read'), 150);
+            } else if (peerData.deliveryMap?.[this.#currentUser?.uid]) {
+                setTimeout(() => this.#markAllOwnMsgsAs(msgs, 'delivered'), 150);
+            }
+        }
     }
 
     #backToHome() {
         this.#unsubGrpMsgs?.();  this.#unsubGrpMsgs  = null;
         this.#unsubPrivMsgs?.(); this.#unsubPrivMsgs = null;
+        if (this.#currentUser && this.#privatePeer) {
+            updateDoc(doc(this.#db, 'users', this.#currentUser.uid), { viewingChat: '' }).catch(() => {});
+        }
         this.#privatePeer = null;
         this.#typing?.clear('group');
+        this.#updateTypingBar('group',   []);
+        this.#updateTypingBar('private', []);
         document.getElementById('chatGroupPanel')?.classList.add('chat-conversation--hidden');
         document.getElementById('chatPrivatePanel')?.classList.add('chat-conversation--hidden');
         document.getElementById('chatHome')?.classList.remove('chat-home--hidden');
@@ -621,7 +645,7 @@ class ChatApp {
         if (text.length > 2000) { alert('Mensagem muito longa. Máximo 2000 caracteres.'); return; }
 
         input.value = ''; input.style.height = 'auto';
-        document.getElementById('btnMicGroup')?.classList.remove('btn-mic--hidden');
+        document.getElementById('micWrapGroup')?.classList.remove('mic-wrap--hidden');
         document.getElementById('btnSendGroup')?.classList.add('btn-send--hidden');
         this.#typing?.clear('group');
 
@@ -698,7 +722,7 @@ class ChatApp {
         if (text.length > 2000) { alert('Mensagem muito longa. Máximo 2000 caracteres.'); return; }
 
         input.value = ''; input.style.height = 'auto';
-        document.getElementById('btnMicPrivate')?.classList.remove('btn-mic--hidden');
+        document.getElementById('micWrapPrivate')?.classList.remove('mic-wrap--hidden');
         document.getElementById('btnSendPrivate')?.classList.add('btn-send--hidden');
         this.#typing?.clear('private', this.#privatePeer.uid);
 
@@ -769,7 +793,7 @@ class ChatApp {
         const el       = document.getElementById('msg-' + id);
         const statusEl = el?.querySelector('.chat-msg-status');
         if (!statusEl) return;
-        const icons = { sending: '🕐', sent: '✓', delivered: '✓✓', read: '✓✓', offline: '📵', failed: '⚠️' };
+        const icons = { sending: '🕐', sent: '✔', delivered: '✔✔', read: '✔✔', offline: '📵', failed: '⚠️' };
         statusEl.textContent  = icons[status] || '';
         statusEl.dataset.status = status;
         statusEl.title = ({
@@ -780,6 +804,18 @@ class ChatApp {
             statusEl.style.cursor = 'pointer';
             statusEl.onclick = () => this.#retryFailedMessage(id);
         }
+    }
+
+    // Atualiza todas as mensagens próprias num container para o status dado (só avança, nunca regride)
+    #markAllOwnMsgsAs(container, status) {
+        const ORDER = ['sending', 'sent', 'delivered', 'read'];
+        container?.querySelectorAll('.chat-msg--own .chat-msg-status').forEach(el => {
+            const cur = el.dataset.status || 'sent';
+            if (ORDER.indexOf(status) > ORDER.indexOf(cur)) {
+                const msgEl = el.closest('.chat-msg');
+                if (msgEl) this.#markMsgStatus(msgEl.id.replace(/^msg-/, ''), status);
+            }
+        });
     }
 
     async #retryFailedMessage(id) {
@@ -868,7 +904,7 @@ class ChatApp {
             ? `<img src="${data.photoURL}" class="chat-msg-avatar" alt="">`
             : `<div class="chat-msg-avatar chat-msg-avatar--initials">${(data.name || '?')[0].toUpperCase()}</div>`;
         const statusHtml = isOwn
-            ? `<span class="chat-msg-status" data-status="${data.status || 'sent'}" title="Enviada">✓</span>`
+            ? `<span class="chat-msg-status" data-status="${data.status || 'sent'}" title="Enviada">✔</span>`
             : '';
         const bodyHtml = (data.type === 'audio' && data.audioURL)
             ? this.#buildAudioPlayer(data.audioURL, time, isOwn)
@@ -1023,13 +1059,16 @@ class ChatApp {
                 if (c.type === 'removed') {
                     this.#userCardMap.get(uid)?.remove();
                     this.#userCardMap.delete(uid);
+                    this.#userDataMap.delete(uid);
                     return;
                 }
                 if (!data.approved || uid === this.#currentUser?.uid) {
                     const ex = this.#userCardMap.get(uid);
                     if (ex) { ex.remove(); this.#userCardMap.delete(uid); }
+                    this.#userDataMap.delete(uid);
                     return;
                 }
+                this.#userDataMap.set(uid, data);
                 if (c.type === 'added') {
                     const wrap = this.#buildUserCard(uid, data);
                     this.#userCardMap.set(uid, wrap);
@@ -1038,7 +1077,7 @@ class ChatApp {
                     const ex = this.#userCardMap.get(uid);
                     if (ex) {
                         this.#updateUserCard(ex, data);
-                        // Atualiza indicador de typing
+                        // Typing nos cards (home)
                         const typingEl = ex.querySelector('.chat-user-typing');
                         if (typingEl) {
                             const isTyping = this.#typing?.isTyping(data, 'group', this.#currentUser?.uid);
@@ -1048,6 +1087,28 @@ class ChatApp {
                         const wrap = this.#buildUserCard(uid, data);
                         this.#userCardMap.set(uid, wrap);
                         container.appendChild(wrap);
+                    }
+                    // ── Typing indicator na área do chat ──────────────
+                    // Grupo: verifica se alguém está digitando
+                    if (this.#userCardMap.size >= 1) {
+                        const groupTypers = [...this.#userDataMap.entries()]
+                            .filter(([u, d]) => u !== this.#currentUser?.uid && this.#typing?.isTyping(d, 'group', this.#currentUser?.uid))
+                            .map(([, d]) => d.name || 'Alguém');
+                        this.#updateTypingBar('group', groupTypers);
+                    }
+                    // Privado: verifica se o peer atual está digitando para mim
+                    if (this.#privatePeer?.uid === uid) {
+                        const isTypingPriv = this.#typing?.isTyping(data, 'private', this.#currentUser?.uid, uid);
+                        this.#updateTypingBar('private', isTypingPriv ? [data.name || this.#privatePeer.name || 'Alguém'] : []);
+                    }
+                    // ── Read receipts (chat privado) ───────────────────
+                    if (this.#privatePeer?.uid === uid && this.#currentUser) {
+                        const msgs = document.getElementById('chatPrivateMessages');
+                        if (data.viewingChat === this.#currentUser.uid) {
+                            this.#markAllOwnMsgsAs(msgs, 'read');
+                        } else if (data.deliveryMap?.[this.#currentUser.uid]) {
+                            this.#markAllOwnMsgsAs(msgs, 'delivered');
+                        }
                     }
                 }
             });
@@ -1083,6 +1144,19 @@ class ChatApp {
         if (presenceEl) presenceEl.classList.toggle('chat-user-card-online', !!data.online);
         const nameEl = wrap.querySelector('.chat-user-card-name');
         if (nameEl) nameEl.textContent = data.name || 'Usuário';
+    }
+
+    // Mostra/oculta a barra de digitação animada no chat (grupo ou privado)
+    // Só aparece se houver pelo menos 1 outro usuário (userCardMap.size >= 1)
+    #updateTypingBar(chatType, typers) {
+        const barId = chatType === 'group' ? 'chatGroupTypingBar' : 'chatPrivateTypingBar';
+        const bar   = document.getElementById(barId);
+        if (!bar) return;
+        if (!typers.length || this.#userCardMap.size < 1) { bar.innerHTML = ''; return; }
+        const name = this.#esc(typers[0]);
+        bar.innerHTML =
+            `<span class="chat-typing-name">${name} está digitando</span>` +
+            `<span class="chat-typing-dots"><span></span><span></span><span></span></span>`;
     }
 
     // ── Notificar ─────────────────────────────────────────
@@ -1194,11 +1268,23 @@ class ChatApp {
     }
 
     #updateMicUI(chatType, recording) {
-        const btn = document.getElementById(chatType === 'group' ? 'btnMicGroup' : 'btnMicPrivate');
+        const isGroup = chatType === 'group';
+        const btn     = document.getElementById(isGroup ? 'btnMicGroup'      : 'btnMicPrivate');
+        const stopBtn = document.getElementById(isGroup ? 'btnMicStopGroup'  : 'btnMicStopPrivate');
+        const track   = document.getElementById(isGroup ? 'micTrackGroup'    : 'micTrackPrivate');
         if (!btn) return;
         btn.classList.toggle('btn-mic--recording', recording);
-        if (!recording) btn.classList.remove('btn-mic--locked');
-        btn.title = recording ? 'Solte para enviar' : 'Segure para gravar';
+        stopBtn?.classList.toggle('btn-mic-stop--hidden', !recording);
+        if (recording) {
+            // Mantém o botão elevado e oculta o trilho (já serviu sua função)
+            btn.style.transform = 'translateY(-16px)';
+            if (track) { track.style.height = '0'; track.style.opacity = '0'; }
+        } else {
+            btn.style.transform = '';
+            btn.classList.remove('btn-mic--locked');
+            if (track) { track.style.height = '0'; track.style.opacity = '0'; }
+        }
+        btn.title = recording ? 'Gravando — clique em ⏹ para enviar' : 'Arraste para cima para gravar';
     }
 
     async #uploadVoiceMsg(blob, chatType) {
@@ -1356,15 +1442,22 @@ class ChatApp {
         this.#unsubCallIn?.();   this.#unsubCallIn   = null;
         this.#chatInitialized = false;
         this.#userCardMap.clear();
+        this.#userDataMap.clear();
         this.#pendingMessages.clear();
         this.#confirmedIds.clear();
         if (this.#isRecording) this.#stopVoiceRecord();
         this.#endCall().catch(() => {});
-        if (this.#currentUser) { this.#presence.stop(); this.#currentUser = null; }
+        if (this.#currentUser) {
+            updateDoc(doc(this.#db, 'users', this.#currentUser.uid), { viewingChat: '' }).catch(() => {});
+            this.#presence.stop();
+            this.#currentUser = null;
+        }
         ['chatGroupMessages', 'chatPrivateMessages'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.innerHTML = '';
         });
+        this.#updateTypingBar('group',   []);
+        this.#updateTypingBar('private', []);
         this.#privatePeer = null;
     }
 
@@ -1381,42 +1474,94 @@ class ChatApp {
         document.getElementById('tabBtnCadastro')?.addEventListener('click', () => this.#switchTab('cadastro'));
         document.getElementById('btnBackToLogin')?.addEventListener('click', () => this.#switchTab('login'));
 
-        // Mic (pressionar/soltar + drag 20px p/ travar)
-        const bindMic = (btnId, chatType) => {
-            const btn = document.getElementById(btnId);
+        // Mic — arraste para cima ≥1rem para iniciar gravação
+        const bindMic = (btnId, stopBtnId, trackId, chatType) => {
+            const btn     = document.getElementById(btnId);
+            const stopBtn = document.getElementById(stopBtnId);
+            const track   = document.getElementById(trackId);
             if (!btn) return;
-            let startY = 0, locked = false;
-            const setLocked = v => { locked = v; btn.classList.toggle('btn-mic--locked', v); btn.title = v ? 'Clique para parar e enviar' : 'Solte para enviar'; };
-            const startRec  = () => { if (!this.#isRecording) this.#startVoiceRecord(chatType); };
-            const stopRec   = () => { if (this.#isRecording) this.#stopVoiceRecord(); setLocked(false); };
-            btn.addEventListener('mousedown',  e => { e.preventDefault(); if (locked) { stopRec(); return; } startY = e.clientY; startRec(); });
-            btn.addEventListener('mousemove',  e => { if (!this.#isRecording || locked) return; if (startY - e.clientY >= 20) setLocked(true); });
-            btn.addEventListener('mouseup',    () => { if (locked) return; stopRec(); });
-            btn.addEventListener('mouseleave', () => { if (locked) return; if (this.#isRecording) stopRec(); });
-            btn.addEventListener('touchstart',  e => { e.preventDefault(); if (locked) { stopRec(); return; } startY = e.touches[0].clientY; startRec(); }, { passive: false });
-            btn.addEventListener('touchmove',   e => { e.preventDefault(); if (!this.#isRecording || locked) return; if (startY - e.touches[0].clientY >= 20) setLocked(true); }, { passive: false });
-            btn.addEventListener('touchend',    e => { e.preventDefault(); if (locked) return; stopRec(); }, { passive: false });
-            btn.addEventListener('touchcancel', e => { e.preventDefault(); locked = false; btn.classList.remove('btn-mic--locked'); stopRec(); }, { passive: false });
-        };
-        bindMic('btnMicGroup',   'group');
-        bindMic('btnMicPrivate', 'private');
+            const THRESHOLD = 16; // 1rem
+            let startY = 0, dragging = false;
 
-        // Toggle mic ↔ send + typing indicator
-        const bindMicSendToggle = (inputId, micId, sendId, chatType, peerUidFn) => {
-            const inp  = document.getElementById(inputId);
-            const mic  = document.getElementById(micId);
-            const send = document.getElementById(sendId);
-            if (!inp || !mic || !send) return;
+            const cancelDrag = () => {
+                dragging = false;
+                btn.style.transform = '';
+                if (track) { track.style.height = '0'; track.style.opacity = '0'; }
+            };
+
+            // Stop button: para gravação e envia áudio
+            stopBtn?.addEventListener('click', () => { if (this.#isRecording) this.#stopVoiceRecord(); });
+
+            // Mouse
+            btn.addEventListener('mousedown', e => {
+                if (this.#isRecording) return;
+                e.preventDefault();
+                startY = e.clientY; dragging = true;
+            });
+            const onMouseMove = e => {
+                if (!dragging || this.#isRecording) return;
+                const delta = Math.max(0, Math.min(startY - e.clientY, THRESHOLD));
+                btn.style.transform = `translateY(-${delta}px)`;
+                if (track) { track.style.height = delta + 'px'; track.style.opacity = delta > 0 ? '1' : '0'; }
+            };
+            const onMouseUp = e => {
+                if (!dragging) return;
+                const delta = startY - e.clientY;
+                dragging = false;
+                if (delta >= THRESHOLD && !this.#isRecording) {
+                    this.#startVoiceRecord(chatType);
+                } else {
+                    cancelDrag();
+                }
+            };
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup',   onMouseUp);
+
+            // Touch
+            btn.addEventListener('touchstart', e => {
+                if (this.#isRecording) return;
+                e.preventDefault();
+                startY = e.touches[0].clientY; dragging = true;
+            }, { passive: false });
+            btn.addEventListener('touchmove', e => {
+                if (!dragging || this.#isRecording) return;
+                e.preventDefault();
+                const delta = Math.max(0, Math.min(startY - e.touches[0].clientY, THRESHOLD));
+                btn.style.transform = `translateY(-${delta}px)`;
+                if (track) { track.style.height = delta + 'px'; track.style.opacity = delta > 0 ? '1' : '0'; }
+            }, { passive: false });
+            btn.addEventListener('touchend', e => {
+                if (!dragging) return;
+                e.preventDefault();
+                const delta = startY - e.changedTouches[0].clientY;
+                dragging = false;
+                if (delta >= THRESHOLD && !this.#isRecording) {
+                    this.#startVoiceRecord(chatType);
+                } else {
+                    cancelDrag();
+                }
+            }, { passive: false });
+            btn.addEventListener('touchcancel', e => { e.preventDefault(); cancelDrag(); }, { passive: false });
+        };
+        bindMic('btnMicGroup',   'btnMicStopGroup',   'micTrackGroup',   'group');
+        bindMic('btnMicPrivate', 'btnMicStopPrivate', 'micTrackPrivate', 'private');
+
+        // Toggle mic-wrap ↔ send + typing indicator
+        const bindMicSendToggle = (inputId, micWrapId, sendId, chatType, peerUidFn) => {
+            const inp     = document.getElementById(inputId);
+            const micWrap = document.getElementById(micWrapId);
+            const send    = document.getElementById(sendId);
+            if (!inp || !micWrap || !send) return;
             inp.addEventListener('input', () => {
                 const hasText = inp.value.trim().length > 0;
-                mic.classList.toggle('btn-mic--hidden', hasText);
+                micWrap.classList.toggle('mic-wrap--hidden', hasText);
                 send.classList.toggle('btn-send--hidden', !hasText);
             });
             inp.addEventListener('keydown', () => this.#typing?.onKeyDown(chatType, peerUidFn?.()));
             inp.addEventListener('blur',    () => this.#typing?.clear(chatType, peerUidFn?.()));
         };
-        bindMicSendToggle('chatGroupInput',   'btnMicGroup',   'btnSendGroup',   'group',   null);
-        bindMicSendToggle('chatPrivateInput', 'btnMicPrivate', 'btnSendPrivate', 'private', () => this.#privatePeer?.uid);
+        bindMicSendToggle('chatGroupInput',   'micWrapGroup',   'btnSendGroup',   'group',   null);
+        bindMicSendToggle('chatPrivateInput', 'micWrapPrivate', 'btnSendPrivate', 'private', () => this.#privatePeer?.uid);
 
         // Send
         document.getElementById('btnSendGroup')?.addEventListener('click',    () => this.#sendGroupMessage());

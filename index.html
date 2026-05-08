@@ -249,10 +249,15 @@
                         <span class="chat-conv-title">🏆 Milionários da Lotofácil</span>
                     </div>
                     <div class="chat-messages" id="chatGroupMessages"></div>
+                    <div class="chat-typing-bar" id="chatGroupTypingBar" aria-live="polite"></div>
                     <div class="chat-input-area">
                         <textarea class="chat-textarea" id="chatGroupInput" placeholder="Mensagem para o grupo..." rows="1" maxlength="500"></textarea>
                         <div class="chat-btn-wrap">
-                            <button class="btn-mic" id="btnMicGroup" title="Gravar áudio">🎤</button>
+                            <div class="mic-slider-wrap" id="micWrapGroup">
+                                <div class="mic-slider-track" id="micTrackGroup"></div>
+                                <button class="btn-mic" id="btnMicGroup" title="Arraste para cima para gravar">🎤</button>
+                                <button class="btn-mic-stop btn-mic-stop--hidden" id="btnMicStopGroup" title="Parar e enviar">⏹</button>
+                            </div>
                             <button class="btn-send btn-send--hidden" id="btnSendGroup" title="Enviar">➤</button>
                         </div>
                     </div>
@@ -265,10 +270,15 @@
                         <span class="chat-conv-title" id="chatPrivateTitle">Mensagem privada</span>
                     </div>
                     <div class="chat-messages" id="chatPrivateMessages"></div>
+                    <div class="chat-typing-bar" id="chatPrivateTypingBar" aria-live="polite"></div>
                     <div class="chat-input-area">
                         <textarea class="chat-textarea" id="chatPrivateInput" placeholder="Mensagem privada..." rows="1" maxlength="500"></textarea>
                         <div class="chat-btn-wrap">
-                            <button class="btn-mic" id="btnMicPrivate" title="Gravar áudio">🎤</button>
+                            <div class="mic-slider-wrap" id="micWrapPrivate">
+                                <div class="mic-slider-track" id="micTrackPrivate"></div>
+                                <button class="btn-mic" id="btnMicPrivate" title="Arraste para cima para gravar">🎤</button>
+                                <button class="btn-mic-stop btn-mic-stop--hidden" id="btnMicStopPrivate" title="Parar e enviar">⏹</button>
+                            </div>
                             <button class="btn-send btn-send--hidden" id="btnSendPrivate" title="Enviar">➤</button>
                         </div>
                     </div>
@@ -595,7 +605,7 @@
     </div>
 
     <script src="script.js"></script>
-    <script type="module" src="chat.js?v=4"></script>
+    <script type="module" src="chat.js?v=5"></script>
     <script>
         // Limpar SWs antigos com escopo errado e registrar o correto
         if ('serviceWorker' in navigator) {
