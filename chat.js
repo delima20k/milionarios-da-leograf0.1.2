@@ -18,7 +18,7 @@ import {
     getStorage, ref, uploadBytes, getDownloadURL
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js';
 import {
-    getMessaging, getToken, onMessage
+    getMessaging, getToken, onMessage, deleteToken
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js';
 
 const FIREBASE_CONFIG = {
@@ -1207,6 +1207,16 @@ class ChatApp {
             }
             // VAPID Key — Firebase Console → Project Settings → Cloud Messaging → Web Push certificates
             const VAPID_KEY = 'BG0Ua4-wcya75XDbahFWpwqs61cLiIs63OiW0Xa2jFiVcCUJ_L2Kse8dI8DGaz8nStPOykMnN2L97Q1gk7a1les';
+            // Detecta troca de SW: o FCM SDK cacheia o token no IndexedDB vinculado à
+            // push subscription do SW anterior. Se o SW mudou (ex: firebase-messaging-sw.js
+            // → service-worker.js), a subscription antiga foi invalidada pelo browser ao
+            // desregistrar o SW. deleteToken() limpa o cache e força nova subscription.
+            const SW_URL_KEY   = 'fcm-sw-url';
+            const currentSwUrl = swReg.active?.scriptURL || '';
+            if (localStorage.getItem(SW_URL_KEY) !== currentSwUrl) {
+                try { await deleteToken(this.#messaging); } catch { /* token pode não existir ainda */ }
+                localStorage.setItem(SW_URL_KEY, currentSwUrl);
+            }
             const token = await getToken(this.#messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
                 await this.#saveFCMToken(token);
