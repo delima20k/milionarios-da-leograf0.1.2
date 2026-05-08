@@ -37,19 +37,18 @@ _fcmMessaging.onBackgroundMessage(payload => {
 });
 // ─────────────────────────────────────────────────────────────────
 
-const CACHE_NAME    = 'milionarios-v4.9';
 const STATIC_CACHE  = 'milionarios-static-v4.9';
 const DYNAMIC_CACHE = 'milionarios-dynamic-v4.9';
 
 // Recursos essenciais para cache
 // Áudios (.mp3) removidos do cache: Range Requests (HTTP 206) são incompatíveis com cache.put()
 // './' removido: asset.replace('./','') == '' → url.includes('') == sempre true (bug)
+// firebase-messaging-sw.js removido: não é mais o SW ativo, FCM está embutido neste arquivo
 const CORE_ASSETS = [
   './index.html',
   './style.css',
   './script.js',
   './chat.js',
-  './firebase-messaging-sw.js',
   './manifest.json',
   './logo.svg'
 ];

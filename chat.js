@@ -299,6 +299,9 @@ class ChatApp {
     #localStream = null;
     #callDocId   = null;
 
+    // Timers
+    #tokenRenewalTimer = null;
+
     // Serviços
     #latency  = new LatencyLogger();
     #offlineQ = new OfflineQueue();
@@ -1207,15 +1210,17 @@ class ChatApp {
             const token = await getToken(this.#messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
                 await this.#saveFCMToken(token);
-                // Renova o token a cada 7 dias (SDK modular não tem onTokenRefresh)
-                setInterval(async () => {
+                // Renova o token a cada 7 dias (SDK modular não tem onTokenRefresh).
+                // Armazena o ID para cancelar no logout e evitar leak.
+                clearInterval(this.#tokenRenewalTimer);
+                this.#tokenRenewalTimer = setInterval(async () => {
                     try {
                         const renewed = await getToken(this.#messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
                         if (renewed) await this.#saveFCMToken(renewed);
                     } catch { /* silencioso */ }
                 }, 7 * 24 * 60 * 60 * 1000);
             }
-            // Foreground push com tag correta por tipo
+            // Foreground push — usa swReg já resolvido (closure) e tag correta por tipo
             onMessage(this.#messaging, payload => {
                 const n    = payload.notification || {};
                 const data = payload.data || {};
@@ -1224,14 +1229,10 @@ class ChatApp {
                     : data.chatType === 'privado'
                         ? 'chat-privado-' + (data.senderId || '')
                         : 'lotofacil-resultado';
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.ready.then(reg =>
-                        reg.showNotification(n.title || '🎱 Milionários da Leograf', {
-                            body: n.body || '', icon: './icon-192.png', badge: './icon-192.png',
-                            tag, renotify: true
-                        })
-                    );
-                }
+                swReg.showNotification(n.title || '🎱 Milionários da Leograf', {
+                    body: n.body || '', icon: './icon-192.png', badge: './icon-192.png',
+                    tag, renotify: true
+                });
             });
         } catch (e) { console.warn('[FCM] Erro ao inicializar:', e.message); }
     }
@@ -1446,6 +1447,7 @@ class ChatApp {
         this.#unsubUsers?.();    this.#unsubUsers    = null;
         this.#unsubInbox?.();    this.#unsubInbox    = null;
         this.#unsubCallIn?.();   this.#unsubCallIn   = null;
+        clearInterval(this.#tokenRenewalTimer); this.#tokenRenewalTimer = null;
         this.#chatInitialized = false;
         this.#userCardMap.clear();
         this.#userDataMap.clear();
