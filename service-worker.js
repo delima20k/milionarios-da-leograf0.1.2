@@ -1,6 +1,45 @@
-const CACHE_NAME    = 'milionarios-v4.8';
-const STATIC_CACHE  = 'milionarios-static-v4.8';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v4.8';
+// ── Firebase Messaging — background push handler ────────────────
+// Deve estar no SW ativo (este arquivo), pois firebase-messaging-sw.js
+// nunca se torna ativo: service-worker.js já ocupa o mesmo escopo com skipWaiting.
+importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+    apiKey:            'AIzaSyCIVshCdXm7Fp1X3kxGr5GZOF_jUBN3ChA',
+    authDomain:        'chatmilhao.firebaseapp.com',
+    projectId:         'chatmilhao',
+    storageBucket:     'chatmilhao.firebasestorage.app',
+    messagingSenderId: '411362756429',
+    appId:             '1:411362756429:web:55059c1f443fe06a1bd904'
+});
+
+const _fcmMessaging = firebase.messaging();
+const _FCM_URL = 'https://delima20k.github.io/milionarios-da-leograf0.1.2/';
+
+_fcmMessaging.onBackgroundMessage(payload => {
+    const n     = payload.notification || {};
+    const data  = payload.data         || {};
+    const title = n.title || '🎱 Milionários da Leograf';
+    const body  = n.body  || data.body || '';
+    let tag     = 'lotofacil-resultado';
+    let vibrate = [300, 100, 300, 100, 600];
+    if (data.chatType === 'grupo')   { tag = 'chat-grupo';                                   vibrate = [200, 100, 200]; }
+    if (data.chatType === 'privado') { tag = 'chat-privado-' + (data.senderId || 'unknown'); vibrate = [200, 100, 200]; }
+    self.registration.showNotification(title, {
+        body,
+        icon:     _FCM_URL + 'icon-192.png',
+        badge:    _FCM_URL + 'icon-192.png',
+        tag,
+        renotify: true,
+        vibrate,
+        data:     { url: data.link || _FCM_URL }
+    });
+});
+// ─────────────────────────────────────────────────────────────────
+
+const CACHE_NAME    = 'milionarios-v4.9';
+const STATIC_CACHE  = 'milionarios-static-v4.9';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v4.9';
 
 // Recursos essenciais para cache
 // Áudios (.mp3) removidos do cache: Range Requests (HTTP 206) são incompatíveis com cache.put()
@@ -178,43 +217,16 @@ async function doBackgroundSync() {
   }
 }
 
-// Notificações Push (se implementar no futuro)
-self.addEventListener('push', event => {
-  if (event.data) {
-    const data = event.data.json();
-    const options = {
-      body: data.body,
-      icon: './logo.svg',
-      badge: './logo.svg',
-      tag: 'milionarios-notification',
-      requireInteraction: true,
-      actions: [
-        {
-          action: 'view',
-          title: 'Ver Resultado'
-        },
-        {
-          action: 'close',
-          title: 'Fechar'
-        }
-      ]
-    };
-    
-    event.waitUntil(
-      self.registration.showNotification(data.title, options)
-    );
-  }
-});
-
 // Clique em notificações — foca janela existente ou abre nova
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+  const target = event.notification.data?.url || _FCM_URL;
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const c of list) {
-        if ('focus' in c) return c.focus();
+        if (c.url.startsWith(_FCM_URL) && 'focus' in c) return c.focus();
       }
-      return clients.openWindow('./');
+      return clients.openWindow(target);
     })
   );
 });

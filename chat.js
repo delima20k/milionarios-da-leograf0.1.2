@@ -1194,7 +1194,9 @@ class ChatApp {
         if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
         if (Notification.permission === 'denied') return;
         try {
-            const swReg = await navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './' });
+            // Usa o SW já ativo (service-worker.js) em vez de registrar firebase-messaging-sw.js
+            // separadamente — dois SWs no mesmo escopo causam conflito: FCM nunca recebe pushes.
+            const swReg = await navigator.serviceWorker.ready;
             this.#messaging = getMessaging(this.#app);
             if (Notification.permission !== 'granted') {
                 const perm = await Notification.requestPermission();

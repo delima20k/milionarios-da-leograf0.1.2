@@ -611,11 +611,15 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', async () => {
                 // Remove qualquer SW registrado com path/escopo incorreto
+                // ou que seja o firebase-messaging-sw.js standalone (não deve ser o SW ativo)
                 const registrations = await navigator.serviceWorker.getRegistrations();
                 for (const reg of registrations) {
-                    if (!reg.scope.includes('/milionarios-da-leograf')) {
+                    const scriptURL = (reg.active || reg.waiting || reg.installing)?.scriptURL || '';
+                    const isFirebaseMsgSW = scriptURL.includes('firebase-messaging-sw.js');
+                    const isWrongScope    = !reg.scope.includes('/milionarios-da-leograf');
+                    if (isFirebaseMsgSW || isWrongScope) {
                         await reg.unregister();
-                        console.log('SW antigo removido:', reg.scope);
+                        console.log('SW removido:', reg.scope, scriptURL);
                     }
                 }
                 navigator.serviceWorker.register('./service-worker.js')
