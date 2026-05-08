@@ -126,7 +126,7 @@ async function enviarParaTodos({ titulo, corpo }) {
 
 // ── Função principal — 21:30 BRT ─────────────────────────────
 exports.checkLotofacilResult = onSchedule(
-    { schedule: '30 21 * * *', timeZone: 'America/Sao_Paulo', retryCount: 2 },
+    { schedule: '40 21 * * *', timeZone: 'America/Sao_Paulo', retryCount: 2 },
     async () => {
         await _verificarEEnviar();
     }
@@ -228,7 +228,7 @@ exports.onGroupMessage = onDocumentCreated(
 
         const snap   = await db.collection('fcmTokens').get();
         const tokens = snap.docs
-            .filter(d => d.data().uid && d.data().uid !== senderUid)
+            .filter(d => d.data().uid !== senderUid)
             .map(d => d.id);
 
         if (tokens.length === 0) return;

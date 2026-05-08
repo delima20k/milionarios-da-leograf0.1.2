@@ -333,7 +333,6 @@ class ChatApp {
         this.#syncHeaderHeight();
         this.#bindUI();
         this.#watchAuth();
-        this.#initFCM();
     }
 
     // ── Util ──────────────────────────────────────────────
@@ -456,7 +455,8 @@ class ChatApp {
         this.#subscribeUsers();
         this.#subscribeInbox();
         this.#listenForIncomingCalls();
-        if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+        // initFCM aqui garante que o token seja salvo com o uid correto do usuário
+        this.#initFCM();
     }
 
     async #loginWithPassword() {
@@ -576,11 +576,10 @@ class ChatApp {
         this.#privOldestDoc = null;
         this.#subscribePrivateMessages(peer.uid);
         this.#clearInboxBadge(peer.uid);
-        // Sinaliza ao remetente que recebi e estou visualizando (read receipt)
+        // Sinaliza ao remetente que estou visualizando este chat (read receipt)
         if (this.#currentUser) {
             updateDoc(doc(this.#db, 'users', this.#currentUser.uid), {
-                viewingChat: peer.uid,
-                [`deliveryMap.${peer.uid}`]: serverTimestamp()
+                viewingChat: peer.uid
             }).catch(() => {});
         }
         // Aplica read receipt imediatamente se peer já tem o chat aberto conosco
@@ -589,7 +588,7 @@ class ChatApp {
             const msgs = document.getElementById('chatPrivateMessages');
             if (peerData.viewingChat === this.#currentUser?.uid) {
                 setTimeout(() => this.#markAllOwnMsgsAs(msgs, 'read'), 150);
-            } else if (peerData.deliveryMap?.[this.#currentUser?.uid]) {
+            } else if (peerData.online) {
                 setTimeout(() => this.#markAllOwnMsgsAs(msgs, 'delivered'), 150);
             }
         }
@@ -1110,7 +1109,8 @@ class ChatApp {
                         const msgs = document.getElementById('chatPrivateMessages');
                         if (data.viewingChat === this.#currentUser.uid) {
                             this.#markAllOwnMsgsAs(msgs, 'read');
-                        } else if (data.deliveryMap?.[this.#currentUser.uid]) {
+                        } else if (data.online) {
+                            // Peer está online mas não visualizando este chat → entregue
                             this.#markAllOwnMsgsAs(msgs, 'delivered');
                         }
                     }
@@ -1484,7 +1484,7 @@ class ChatApp {
             const stopBtn = document.getElementById(stopBtnId);
             const track   = document.getElementById(trackId);
             if (!btn) return;
-            const THRESHOLD = 16; // 1rem
+            const THRESHOLD = 15; // 15px
             let startY = 0, dragging = false;
 
             const cancelDrag = () => {

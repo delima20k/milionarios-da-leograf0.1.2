@@ -1,6 +1,6 @@
-const CACHE_NAME = 'milionarios-v4.7';
-const STATIC_CACHE = 'milionarios-static-v4.7';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v4.7';
+const CACHE_NAME    = 'milionarios-v4.8';
+const STATIC_CACHE  = 'milionarios-static-v4.8';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v4.8';
 
 // Recursos essenciais para cache
 // Áudios (.mp3) removidos do cache: Range Requests (HTTP 206) são incompatíveis com cache.put()

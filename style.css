@@ -1752,13 +1752,13 @@ body {
     border: none;
     border-radius: 50%;
     color: #fff;
-    font-size: 20px;
+    font-size: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     flex-shrink: 0;
-    transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+    transition: transform 0.15s, box-shadow 0.15s;
     user-select: none;
     -webkit-user-select: none;
     touch-action: none;
@@ -1773,14 +1773,13 @@ body {
     inset: -8px;
     border-radius: 50%;
 }
-.btn-mic:hover  { background: #27ae60; transform: scale(1.1); }
+.btn-mic:hover  { transform: scale(1.1); }
 .btn-mic:active { transform: scale(0.92); }
 
-/* Gravando: vermelho pulsante — feedback claro */
+/* Gravando: anel pulsante — feedback via botão ⏹ */
 .btn-mic--recording {
-    background: #e74c3c !important;
     opacity: 1;
-    transform: scale(1.18);
+    transform: scale(1.08);
     box-shadow: 0 0 0 8px rgba(231,76,60,0.35);
     animation: pulse-rec 0.9s ease-in-out infinite;
 }
