@@ -965,9 +965,12 @@ class ChatApp {
         const durEl   = player.querySelector('.cap-duration');
         const audio   = new Audio(player.dataset.src);
         let barsW     = 0;
-        const fmt = s => `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;
+        const fmt = s => {
+            if (!isFinite(s) || isNaN(s) || s < 0) return '0:00';
+            return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+        };
         audio.addEventListener('loadedmetadata', () => {
-            durEl.textContent = fmt(audio.duration);
+            if (isFinite(audio.duration)) durEl.textContent = fmt(audio.duration);
             barsW = bars.reduce((acc, b) => acc + b.offsetWidth + 2, 0);
         });
         audio.addEventListener('timeupdate', () => {
@@ -983,7 +986,8 @@ class ChatApp {
             playBtn.textContent = '▶️';
             bars.forEach(b => b.classList.remove('cap-bar--played'));
             dot.style.left    = '0px';
-            durEl.textContent = fmt(audio.duration || 0);
+            const dur = isFinite(audio.duration) ? audio.duration : audio.currentTime;
+            durEl.textContent = fmt(dur);
         });
         playBtn.addEventListener('click', () => {
             if (audio.paused) { audio.play(); playBtn.textContent = '⏸️'; }
