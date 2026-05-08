@@ -588,7 +588,7 @@ class ChatApp {
                     if (this.#confirmedIds.has(c.doc.id)) return;
                     // Tenta associar a uma mensagem otimista pendente
                     const entry = [...this.#pendingMessages.values()].find(
-                        p => !p.resolved && p.text === c.doc.data().text && p.uid === c.doc.data().uid
+                        p => !p.resolved && p.colPath === 'messages' && p.text === c.doc.data().text && p.uid === c.doc.data().uid
                     );
                     if (entry) {
                         this.#confirmPendingMessage(entry.tempId, c.doc.id);
@@ -602,7 +602,7 @@ class ChatApp {
             });
             if (first) { first = false; this.#renderLoadMoreBtn(msgs, 'group'); }
             this.#scrollBottom(msgs);
-        });
+        }, e => console.error('[Chat] Erro no listener de grupo:', e.message));
     }
 
     async #sendGroupMessage() {
@@ -664,7 +664,7 @@ class ChatApp {
                     const fid = 'priv-' + c.doc.id;
                     if (this.#confirmedIds.has(fid)) return;
                     const entry = [...this.#pendingMessages.values()].find(
-                        p => !p.resolved && p.text === c.doc.data().text && p.uid === c.doc.data().uid
+                        p => !p.resolved && p.colPath === colPath && p.text === c.doc.data().text && p.uid === c.doc.data().uid
                     );
                     if (entry) {
                         this.#confirmPendingMessage(entry.tempId, fid);
@@ -678,7 +678,7 @@ class ChatApp {
             });
             if (first) { first = false; this.#renderLoadMoreBtn(msgs, 'private'); }
             this.#scrollBottom(msgs);
-        });
+        }, e => console.error('[Chat] Erro no listener privado:', e.message));
     }
 
     async #sendPrivateMessage() {
@@ -792,10 +792,12 @@ class ChatApp {
         console.info(`[OfflineQueue] Reenviando ${queue.length} mensagem(s)...`);
         for (const item of queue) {
             try {
-                const docRef = await addDoc(collection(this.#db, item.colPath), { ...item.msgData, createdAt: serverTimestamp() });
-                this.#confirmedIds.add(docRef.id);
+                const docRef  = await addDoc(collection(this.#db, item.colPath), { ...item.msgData, createdAt: serverTimestamp() });
+                const isPriv  = item.colPath.startsWith('privateChats/');
+                const fid     = isPriv ? 'priv-' + docRef.id : docRef.id;
+                this.#confirmedIds.add(fid);
                 const el = document.getElementById('msg-' + item.tempId);
-                if (el) { el.id = 'msg-' + docRef.id; this.#markMsgStatus(docRef.id, 'sent'); }
+                if (el) { el.id = 'msg-' + fid; this.#markMsgStatus(fid, 'sent'); }
                 await this.#offlineQ.remove(item.tempId);
                 console.info(`[OfflineQueue] ${item.tempId} → enviada`);
             } catch (e) { console.warn(`[OfflineQueue] Falha ${item.tempId}:`, e.message); }
