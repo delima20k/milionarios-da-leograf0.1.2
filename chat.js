@@ -221,6 +221,8 @@ class PresenceManager {
     constructor(db) { this.#db = db; }
 
     start(uid) {
+        if (this.#uid === uid) return;     // ja iniciado para este usuario — previne loop
+        if (this.#uid) this.stop();        // limpa sessao anterior
         this.#uid = uid;
         this.#setOnline(true);
         this.#heartbeatTimer = setInterval(() => this.#heartbeat(), PresenceManager.HEARTBEAT_MS);
@@ -265,6 +267,7 @@ class ChatApp {
     #unsubCallOut  = null;
 
     // Estado do chat
+    #chatInitialized    = false;
     #privatePeer        = null;
     #pendingVerifyEmail = null;
 
@@ -440,6 +443,10 @@ class ChatApp {
         const el   = document.getElementById('chatWelcomeText');
         if (el) el.textContent = 'Olá Milionário ' + name;
         this.#updateAvatarUI(userData.photoURL || '');
+        // Guard: presence.start() escreve no Firestore → dispara onSnapshot(userRef)
+        // → #enterChat chamado novamente → loop infinito → cascade 400 no WebChannel
+        if (this.#chatInitialized) return;
+        this.#chatInitialized = true;
         this.#presence.start(this.#currentUser.uid);
         this.#subscribeOnline();
         this.#subscribeUsers();
@@ -1349,6 +1356,7 @@ class ChatApp {
         this.#unsubUsers?.();    this.#unsubUsers    = null;
         this.#unsubInbox?.();    this.#unsubInbox    = null;
         this.#unsubCallIn?.();   this.#unsubCallIn   = null;
+        this.#chatInitialized = false;
         this.#userCardMap.clear();
         this.#pendingMessages.clear();
         this.#confirmedIds.clear();

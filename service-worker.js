@@ -1,4 +1,4 @@
-const CACHE_NAME = 'milionarios-v4.4';
+const CACHE_NAME = 'milionarios-v4.5';
 const STATIC_CACHE = 'milionarios-static-v4.4';
 const DYNAMIC_CACHE = 'milionarios-dynamic-v4.4';
 
