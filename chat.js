@@ -7,7 +7,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/fireba
 import {
     getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider,
     createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification,
-    signOut, updateProfile
+    signOut, updateProfile, setPersistence, browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {
     getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot,
@@ -314,6 +314,8 @@ class ChatApp {
         this.#storage        = getStorage(this.#app);
         this.#googleProvider = new GoogleAuthProvider();
         this.#auth.languageCode = 'pt-BR';
+        // Mantém sessão no IndexedDB — persiste após fechar/reabrir o browser
+        setPersistence(this.#auth, browserLocalPersistence).catch(() => {});
 
         this.#presence = new PresenceManager(this.#db);
 
@@ -1120,12 +1122,8 @@ class ChatApp {
                 const perm = await Notification.requestPermission();
                 if (perm !== 'granted') return;
             }
-            // VAPID Key — gere em: Firebase Console → Project Settings → Cloud Messaging → Web Push certificates
-            const VAPID_KEY = 'COLE_SUA_VAPID_KEY_AQUI';
-            if (VAPID_KEY === 'COLE_SUA_VAPID_KEY_AQUI') {
-                console.warn('[FCM] VAPID Key não configurada. Acesse: Firebase Console → Project Settings → Cloud Messaging → Web Push certificates → Generate key pair. Cole a chave em VAPID_KEY neste arquivo.');
-                return;
-            }
+            // VAPID Key — Firebase Console → Project Settings → Cloud Messaging → Web Push certificates
+            const VAPID_KEY = 'BG0Ua4-wcya75XDbahFWpwqs61cLiIs63OiW0Xa2jFiVcCUJ_L2Kse8dI8DGaz8nStPOykMnN2L97Q1gk7a1les';
             const token = await getToken(this.#messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
                 await this.#saveFCMToken(token);
