@@ -5,7 +5,7 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
-    getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider,
+    getAuth, onAuthStateChanged, signInWithRedirect, getRedirectResult, GoogleAuthProvider,
     createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification,
     signOut, updateProfile
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
@@ -385,7 +385,10 @@ class ChatApp {
     }
 
     // ── Auth ──────────────────────────────────────────────
-    #watchAuth() { onAuthStateChanged(this.#auth, u => this.#handleAuthChange(u)); }
+    #watchAuth() {
+        getRedirectResult(this.#auth).catch(e => this.#showError(this.#translateError(e)));
+        onAuthStateChanged(this.#auth, u => this.#handleAuthChange(u));
+    }
 
     async #handleAuthChange(user) {
         this.#cleanup();
@@ -477,7 +480,7 @@ class ChatApp {
     }
 
     async #loginGoogle() {
-        try { this.#clearError(); await signInWithPopup(this.#auth, this.#googleProvider); }
+        try { this.#clearError(); await signInWithRedirect(this.#auth, this.#googleProvider); }
         catch (e) { this.#showError(this.#translateError(e)); }
     }
 

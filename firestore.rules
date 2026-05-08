@@ -22,8 +22,7 @@ service cloud.firestore {
                      && (chatId.matches(request.auth.uid + '_.*')
                          || chatId.matches('.*_' + request.auth.uid));
       allow list   : if request.auth != null
-                     && (resource.data.receiverUid == request.auth.uid
-                         || resource.data.senderUid == request.auth.uid);
+                     && resource.data.unreadFor == request.auth.uid;
       allow write  : if request.auth != null
                      && (chatId.matches(request.auth.uid + '_.*')
                          || chatId.matches('.*_' + request.auth.uid));
