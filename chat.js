@@ -5,7 +5,7 @@
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
-    getAuth, onAuthStateChanged, signInWithRedirect, getRedirectResult, GoogleAuthProvider,
+    getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider,
     createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification,
     signOut, updateProfile
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
@@ -386,7 +386,6 @@ class ChatApp {
 
     // ── Auth ──────────────────────────────────────────────
     #watchAuth() {
-        getRedirectResult(this.#auth).catch(e => this.#showError(this.#translateError(e)));
         onAuthStateChanged(this.#auth, u => this.#handleAuthChange(u));
     }
 
@@ -412,23 +411,27 @@ class ChatApp {
         this.#currentUser = user;
         this.#typing      = new TypingManager(this.#db, user.uid);
 
-        const userRef = doc(this.#db, 'users', user.uid);
-        const snap    = await getDoc(userRef);
-        if (!snap.exists()) {
-            await setDoc(userRef, {
-                name: user.displayName || user.email.split('@')[0],
-                email: user.email, photoURL: user.photoURL || '',
-                approved: true, online: false, lastSeen: serverTimestamp()
-            });
-        } else if (!snap.data().approved) {
-            await updateDoc(userRef, { approved: true });
+        try {
+            const userRef = doc(this.#db, 'users', user.uid);
+            const snap    = await getDoc(userRef);
+            if (!snap.exists()) {
+                await setDoc(userRef, {
+                    name: user.displayName || user.email.split('@')[0],
+                    email: user.email, photoURL: user.photoURL || '',
+                    approved: true, online: false, lastSeen: serverTimestamp()
+                });
+            } else if (!snap.data().approved) {
+                await updateDoc(userRef, { approved: true });
+            }
+            this.#unsubUserDoc = onSnapshot(userRef, d => {
+                if (!d.exists()) return;
+                const data = d.data();
+                if (data.approved) this.#enterChat(data);
+                else this.#showPanel('pending');
+            }, e => this.#showError('Erro de conexão: ' + this.#translateError(e)));
+        } catch (e) {
+            this.#showError('Erro ao entrar: ' + this.#translateError(e));
         }
-        this.#unsubUserDoc = onSnapshot(userRef, d => {
-            if (!d.exists()) return;
-            const data = d.data();
-            if (data.approved) this.#enterChat(data);
-            else this.#showPanel('pending');
-        });
     }
 
     async #enterChat(userData) {
@@ -480,7 +483,7 @@ class ChatApp {
     }
 
     async #loginGoogle() {
-        try { this.#clearError(); await signInWithRedirect(this.#auth, this.#googleProvider); }
+        try { this.#clearError(); await signInWithPopup(this.#auth, this.#googleProvider); }
         catch (e) { this.#showError(this.#translateError(e)); }
     }
 
