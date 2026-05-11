@@ -69,6 +69,25 @@ service cloud.firestore {
       allow read, write : if request.auth != null;
     }
 
+    // ── E2E: chave de grupo cifrada por destinatário ───────
+    // Cada documento é {uid} do destinatário — só ele pode ler/escrever o seu
+    match /groupKeyStore/{uid} {
+      allow read, write : if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── E2E P2P: sinalização WebRTC DataChannel ────────────
+    // chatId = uid1_uid2 (ordenados) — somente os dois participantes
+    match /p2pSignals/{chatId} {
+      allow read, write : if request.auth != null
+                          && (chatId.matches(request.auth.uid + '_.*')
+                              || chatId.matches('.*_' + request.auth.uid));
+    }
+    match /p2pSignals/{chatId}/ice/{uid}/{candId} {
+      allow read, write : if request.auth != null
+                          && (chatId.matches(request.auth.uid + '_.*')
+                              || chatId.matches('.*_' + request.auth.uid));
+    }
+
     // ── Estado da app (Lotofácil) ──────────────────────────
     match /app_state/{docId} {
       allow read : if request.auth != null;

@@ -244,6 +244,260 @@ class GroupCallManager {
     }
 }
 
+// ──────────────────────────────────────────────────────────────
+// 🔐 E2E MANAGER — Criptografia de ponta a ponta (Web Crypto API)
+// ──────────────────────────────────────────────────────────────
+// Privado (1:1): ECDH P-256 → AES-256-GCM derivado por par de usuários
+// Grupo:         AES-256-GCM com chave distribuída via Firestore
+//                (chave cifrada individualmente com ECDH de cada membro)
+class E2EManager {
+    static #IDB_DB    = 'milionarios-e2e';
+    static #IDB_STORE = 'keys';
+
+    #privateKey;            // CryptoKey ECDH
+    #publicKey;             // CryptoKey ECDH
+    #publicKeyB64 = null;
+    #derivedKeys  = new Map(); // peerPubB64 → CryptoKey AES-256-GCM
+    #groupKey     = null;      // CryptoKey AES-256-GCM
+
+    constructor(privateKey, publicKey) {
+        this.#privateKey = privateKey;
+        this.#publicKey  = publicKey;
+    }
+
+    static async load(uid) {
+        const idb    = await E2EManager.#openIDB();
+        const stored = await E2EManager.#idbGet(idb, uid);
+        if (stored) {
+            const priv = await crypto.subtle.importKey('pkcs8', stored.priv, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveKey']);
+            const pub  = await crypto.subtle.importKey('spki',  stored.pub,  { name: 'ECDH', namedCurve: 'P-256' }, true,  []);
+            const mgr  = new E2EManager(priv, pub);
+            if (stored.groupKey) {
+                mgr.#groupKey = await crypto.subtle.importKey('raw', stored.groupKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+            }
+            return mgr;
+        }
+        const pair    = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveKey']);
+        const privBuf = await crypto.subtle.exportKey('pkcs8', pair.privateKey);
+        const pubBuf  = await crypto.subtle.exportKey('spki',  pair.publicKey);
+        await E2EManager.#idbSet(idb, uid, { priv: privBuf, pub: pubBuf, groupKey: null });
+        return new E2EManager(pair.privateKey, pair.publicKey);
+    }
+
+    get hasGroupKey() { return this.#groupKey !== null; }
+
+    async exportPublicKey() {
+        if (!this.#publicKeyB64) {
+            const buf = await crypto.subtle.exportKey('spki', this.#publicKey);
+            this.#publicKeyB64 = E2EManager.#bufToB64(buf);
+        }
+        return this.#publicKeyB64;
+    }
+
+    async generateGroupKey(uid) {
+        this.#groupKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+        await this.#persistGroupKey(uid);
+    }
+
+    async loadGroupKeyFrom(enc, fromPubB64, uid) {
+        const sharedKey = await this.#deriveSharedKey(fromPubB64);
+        const rawBuf    = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: E2EManager.#b64ToBuf(enc.iv) }, sharedKey, E2EManager.#b64ToBuf(enc.ct)
+        );
+        this.#groupKey = await crypto.subtle.importKey('raw', rawBuf, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+        await this.#persistGroupKey(uid);
+    }
+
+    async encryptGroupKeyFor(theirPubB64) {
+        const sharedKey = await this.#deriveSharedKey(theirPubB64);
+        const raw       = await crypto.subtle.exportKey('raw', this.#groupKey);
+        const iv        = crypto.getRandomValues(new Uint8Array(12));
+        const ct        = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, sharedKey, raw);
+        return { iv: E2EManager.#bufToB64(iv), ct: E2EManager.#bufToB64(ct) };
+    }
+
+    async encryptForPeer(plaintext, peerPubB64)  { return this.#gcmEncrypt(plaintext, await this.#deriveSharedKey(peerPubB64)); }
+    async decryptFromPeer(enc, peerPubB64)        { return this.#gcmDecrypt(enc,       await this.#deriveSharedKey(peerPubB64)); }
+    async encryptWithGroupKey(plaintext)           { return this.#gcmEncrypt(plaintext, this.#groupKey); }
+    async decryptWithGroupKey(enc)                 { return this.#gcmDecrypt(enc,       this.#groupKey); }
+
+    async #deriveSharedKey(peerPubB64) {
+        if (this.#derivedKeys.has(peerPubB64)) return this.#derivedKeys.get(peerPubB64);
+        const peerPub = await crypto.subtle.importKey('spki', E2EManager.#b64ToBuf(peerPubB64), { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+        const key     = await crypto.subtle.deriveKey(
+            { name: 'ECDH', public: peerPub }, this.#privateKey,
+            { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+        );
+        this.#derivedKeys.set(peerPubB64, key);
+        return key;
+    }
+
+    async #gcmEncrypt(plaintext, key) {
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plaintext));
+        return { iv: E2EManager.#bufToB64(iv), ct: E2EManager.#bufToB64(ct) };
+    }
+
+    async #gcmDecrypt(enc, key) {
+        const pt = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: E2EManager.#b64ToBuf(enc.iv) }, key, E2EManager.#b64ToBuf(enc.ct)
+        );
+        return new TextDecoder().decode(pt);
+    }
+
+    async #persistGroupKey(uid) {
+        const idb = await E2EManager.#openIDB();
+        const rec = (await E2EManager.#idbGet(idb, uid)) || {};
+        const raw = await crypto.subtle.exportKey('raw', this.#groupKey);
+        await E2EManager.#idbSet(idb, uid, { ...rec, groupKey: raw });
+    }
+
+    static #openIDB() {
+        return new Promise((res, rej) => {
+            const req = indexedDB.open(E2EManager.#IDB_DB, 1);
+            req.onupgradeneeded = e => e.target.result.createObjectStore(E2EManager.#IDB_STORE);
+            req.onsuccess = e => res(e.target.result);
+            req.onerror   = e => rej(e.target.error);
+        });
+    }
+
+    static #idbGet(db, key) {
+        return new Promise((res, rej) => {
+            const tx  = db.transaction(E2EManager.#IDB_STORE, 'readonly');
+            const req = tx.objectStore(E2EManager.#IDB_STORE).get(key);
+            req.onsuccess = e => res(e.target.result ?? null);
+            req.onerror   = e => rej(e.target.error);
+        });
+    }
+
+    static #idbSet(db, key, val) {
+        return new Promise((res, rej) => {
+            const tx  = db.transaction(E2EManager.#IDB_STORE, 'readwrite');
+            const req = tx.objectStore(E2EManager.#IDB_STORE).put(val, key);
+            req.onsuccess = () => res();
+            req.onerror   = e => rej(e.target.error);
+        });
+    }
+
+    static #bufToB64(buf) {
+        return btoa(String.fromCharCode(...new Uint8Array(buf instanceof ArrayBuffer ? buf : buf.buffer)));
+    }
+
+    static #b64ToBuf(b64) {
+        const bin = atob(b64);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        return buf.buffer;
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// 📡 P2P CHANNEL — Entrega direta via WebRTC DataChannel (chat 1:1)
+// ──────────────────────────────────────────────────────────────
+// Firestore (sinalização):
+//   p2pSignals/{chatId}                — { offer?, answer? }
+//   p2pSignals/{chatId}/ice/{uid}/{id} — ICE candidates
+// Anti-glare: uid lexicograficamente menor cria o offer
+class P2PChannel {
+    static #STUN    = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+    static #TIMEOUT = 6000; // ms antes de desistir da conexão P2P
+
+    #db;
+    #myUid;
+    #peerUid;
+    #chatId;
+    #pc      = null;
+    #channel = null;
+    #unsubs  = [];
+    #onMessage;
+    #onStateChange;
+
+    constructor(db, myUid, peerUid, chatId, { onMessage, onStateChange } = {}) {
+        this.#db            = db;
+        this.#myUid         = myUid;
+        this.#peerUid       = peerUid;
+        this.#chatId        = chatId;
+        this.#onMessage     = onMessage     || (() => {});
+        this.#onStateChange = onStateChange || (() => {});
+    }
+
+    get isOpen() { return this.#channel?.readyState === 'open'; }
+
+    async connect() {
+        this.close();
+        this.#pc     = new RTCPeerConnection(P2PChannel.#STUN);
+        const sigRef = doc(this.#db, 'p2pSignals', this.#chatId);
+        const isInit = this.#myUid < this.#peerUid; // anti-glare
+
+        this.#pc.onicecandidate = async e => {
+            if (!e.candidate) return;
+            await addDoc(collection(this.#db, 'p2pSignals', this.#chatId, 'ice', this.#myUid), e.candidate.toJSON());
+        };
+        this.#pc.onconnectionstatechange = () => {
+            this.#onStateChange(this.#pc.connectionState);
+            if (['failed', 'disconnected', 'closed'].includes(this.#pc.connectionState)) this.close();
+        };
+
+        if (isInit) {
+            this.#channel = this.#pc.createDataChannel('chat', { ordered: true });
+            this.#setupChannel();
+            const offer = await this.#pc.createOffer();
+            await this.#pc.setLocalDescription(offer);
+            await setDoc(sigRef, { offer: { type: offer.type, sdp: offer.sdp } }, { merge: true });
+            const unsubSig = onSnapshot(sigRef, async snap => {
+                const data = snap.data();
+                if (data?.answer && !this.#pc.currentRemoteDescription) {
+                    await this.#pc.setRemoteDescription(data.answer).catch(() => {});
+                }
+            });
+            this.#unsubs.push(unsubSig);
+        } else {
+            this.#pc.ondatachannel = e => { this.#channel = e.channel; this.#setupChannel(); };
+            const unsubSig = onSnapshot(sigRef, async snap => {
+                const data = snap.data();
+                if (data?.offer && !this.#pc.currentRemoteDescription) {
+                    await this.#pc.setRemoteDescription(data.offer).catch(() => {});
+                    const answer = await this.#pc.createAnswer();
+                    await this.#pc.setLocalDescription(answer);
+                    await setDoc(sigRef, { answer: { type: answer.type, sdp: answer.sdp } }, { merge: true });
+                }
+            });
+            this.#unsubs.push(unsubSig);
+        }
+
+        const iceRef   = collection(this.#db, 'p2pSignals', this.#chatId, 'ice', this.#peerUid);
+        const unsubIce = onSnapshot(iceRef, snap => {
+            snap.docChanges().forEach(c => {
+                if (c.type === 'added') this.#pc.addIceCandidate(c.doc.data()).catch(() => {});
+            });
+        });
+        this.#unsubs.push(unsubIce);
+
+        setTimeout(() => { if (!this.isOpen) this.close(); }, P2PChannel.#TIMEOUT);
+    }
+
+    send(data) {
+        if (!this.isOpen) return false;
+        this.#channel.send(data);
+        return true;
+    }
+
+    close() {
+        this.#unsubs.forEach(u => u());
+        this.#unsubs = [];
+        this.#channel?.close();
+        this.#pc?.close();
+        this.#channel = null;
+        this.#pc      = null;
+    }
+
+    #setupChannel() {
+        this.#channel.onopen    = () => this.#onStateChange('open');
+        this.#channel.onclose   = () => this.#onStateChange('closed');
+        this.#channel.onmessage = e  => this.#onMessage(e.data);
+    }
+}
+
 const FIREBASE_CONFIG = {
     apiKey:            'AIzaSyCIVshCdXm7Fp1X3kxGr5GZOF_jUBN3ChA',
     authDomain:        'chatmilhao.firebaseapp.com',
@@ -531,6 +785,13 @@ class ChatApp {
     #unsubGroupCallIn = null;
     #isAdmin          = false;
 
+    // E2E encryption + P2P DataChannel
+    #e2e                = null;
+    #p2pChannel         = null;
+    #p2pReceivedIds     = new Set();
+    #groupKeyHolders    = new Set();
+    #unsubGroupKeyStore = null;
+
     // Timers
     #tokenRenewalTimer = null;
     #currentFcmToken   = null;
@@ -687,6 +948,7 @@ class ChatApp {
         // → #enterChat chamado novamente → loop infinito → cascade 400 no WebChannel
         if (this.#chatInitialized) return;
         this.#chatInitialized = true;
+        await this.#initE2E();
         this.#presence.start(this.#currentUser.uid);
         this.#subscribeOnline();
         this.#subscribeUsers();
@@ -838,6 +1100,19 @@ class ChatApp {
                 setTimeout(() => this.#markAllOwnMsgsAs(msgs, 'delivered'), 150);
             }
         }
+
+        // Estabelecer canal P2P direto (WebRTC DataChannel) para entrega instantânea
+        this.#p2pChannel?.close();
+        this.#p2pChannel    = null;
+        this.#p2pReceivedIds.clear();
+        if (this.#currentUser) {
+            const chatId = [this.#currentUser.uid, peer.uid].sort().join('_');
+            this.#p2pChannel = new P2PChannel(this.#db, this.#currentUser.uid, peer.uid, chatId, {
+                onMessage:     raw   => this.#handleP2PMessage(raw),
+                onStateChange: state => console.info('[P2P] Canal:', state)
+            });
+            this.#p2pChannel.connect().catch(e => console.warn('[P2P] Falha na conexão:', e.message));
+        }
     }
 
     #backToHome() {
@@ -847,6 +1122,9 @@ class ChatApp {
             updateDoc(doc(this.#db, 'users', this.#currentUser.uid), { viewingChat: '' }).catch(() => {});
         }
         this.#privatePeer = null;
+        this.#p2pChannel?.close();
+        this.#p2pChannel = null;
+        this.#p2pReceivedIds.clear();
         this.#typing?.clear('group');
         this.#updateTypingBar('group',   []);
         this.#updateTypingBar('private', []);
@@ -864,16 +1142,18 @@ class ChatApp {
             snap.docChanges().forEach(c => {
                 if (c.type === 'added') {
                     if (this.#confirmedIds.has(c.doc.id)) return;
-                    // Tenta associar a uma mensagem otimista pendente
-                    const entry = [...this.#pendingMessages.values()].find(
-                        p => !p.resolved && p.colPath === 'messages' && p.text === c.doc.data().text && p.uid === c.doc.data().uid
-                    );
-                    if (entry) {
-                        this.#confirmPendingMessage(entry.tempId, c.doc.id);
-                        entry.resolved = true;
-                    } else {
-                        this.#renderMsg(msgs, c.doc.id, c.doc.data(), !first, 'group');
-                    }
+                    const notify = !first;
+                    this.#decryptMsg(c.doc.data(), 'group').then(data => {
+                        const entry = [...this.#pendingMessages.values()].find(
+                            p => !p.resolved && p.tempId === data.tempId
+                        );
+                        if (entry) {
+                            this.#confirmPendingMessage(entry.tempId, c.doc.id);
+                            entry.resolved = true;
+                        } else {
+                            this.#renderMsg(msgs, c.doc.id, data, notify, 'group');
+                        }
+                    });
                     if (!this.#grpOldestDoc) this.#grpOldestDoc = c.doc;
                 }
                 if (c.type === 'removed') document.getElementById('msg-' + c.doc.id)?.remove();
@@ -894,6 +1174,11 @@ class ChatApp {
         document.getElementById('btnSendGroup')?.classList.add('btn-send--hidden');
         this.#typing?.clear('group');
 
+        // Cifrar texto (E2E) antes de criar o tempId
+        const enc = this.#e2e?.hasGroupKey
+            ? await this.#e2e.encryptWithGroupKey(text).catch(() => null)
+            : null;
+
         const tempId  = 'tmp-' + crypto.randomUUID();
         const msgData = {
             uid: this.#currentUser.uid, name: this.#getDisplayName(),
@@ -908,7 +1193,7 @@ class ChatApp {
         this.#pendingMessages.set(tempId, { tempId, text, uid: this.#currentUser.uid, colPath: 'messages', resolved: false });
 
         if (!this.#connMon.isOnline) {
-            await this.#offlineQ.push({ tempId, colPath: 'messages', msgData: { uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL, text } });
+            await this.#offlineQ.push({ tempId, colPath: 'messages', msgData: { uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL, text: enc ? null : text, enc, tempId } });
             this.#markMsgStatus(tempId, 'offline');
             return;
         }
@@ -917,7 +1202,7 @@ class ChatApp {
         try {
             const docRef = await addDoc(collection(this.#db, 'messages'), {
                 uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL,
-                text, createdAt: serverTimestamp()
+                text: enc ? null : text, enc, tempId, createdAt: serverTimestamp()
             });
             this.#confirmedIds.add(docRef.id);
             this.#latency.markConfirmed(tempId, docRef.id, Date.now() - sendMs);
@@ -939,17 +1224,29 @@ class ChatApp {
         this.#unsubPrivMsgs = onSnapshot(q, snap => {
             snap.docChanges().forEach(c => {
                 if (c.type === 'added') {
-                    const fid = 'priv-' + c.doc.id;
+                    const fid     = 'priv-' + c.doc.id;
+                    const rawData = c.doc.data();
                     if (this.#confirmedIds.has(fid)) return;
-                    const entry = [...this.#pendingMessages.values()].find(
-                        p => !p.resolved && p.colPath === colPath && p.text === c.doc.data().text && p.uid === c.doc.data().uid
-                    );
-                    if (entry) {
-                        this.#confirmPendingMessage(entry.tempId, fid);
-                        entry.resolved = true;
-                    } else {
-                        this.#renderMsg(msgs, fid, c.doc.data(), !first, 'private');
+                    // Mensagem já entregue via P2P DataChannel: só atualiza o ID do elemento
+                    if (rawData.tempId && this.#p2pReceivedIds.has(rawData.tempId)) {
+                        this.#p2pReceivedIds.delete(rawData.tempId);
+                        const p2pEl = document.getElementById('msg-p2p-' + rawData.tempId);
+                        if (p2pEl) p2pEl.id = 'msg-' + fid;
+                        if (!this.#privOldestDoc) this.#privOldestDoc = c.doc;
+                        return;
                     }
+                    const notify = !first;
+                    this.#decryptMsg(rawData, 'private').then(data => {
+                        const entry = [...this.#pendingMessages.values()].find(
+                            p => !p.resolved && p.tempId === data.tempId
+                        );
+                        if (entry) {
+                            this.#confirmPendingMessage(entry.tempId, fid);
+                            entry.resolved = true;
+                        } else {
+                            this.#renderMsg(msgs, fid, data, notify, 'private');
+                        }
+                    });
                     if (!this.#privOldestDoc) this.#privOldestDoc = c.doc;
                 }
                 if (c.type === 'removed') document.getElementById('msg-priv-' + c.doc.id)?.remove();
@@ -971,6 +1268,12 @@ class ChatApp {
         document.getElementById('btnSendPrivate')?.classList.add('btn-send--hidden');
         this.#typing?.clear('private', this.#privatePeer.uid);
 
+        // Cifrar texto (E2E) antes de criar o tempId
+        const peerPub = this.#userDataMap.get(this.#privatePeer.uid)?.publicKey;
+        const enc = (this.#e2e && peerPub)
+            ? await this.#e2e.encryptForPeer(text, peerPub).catch(() => null)
+            : null;
+
         const chatId  = [this.#currentUser.uid, this.#privatePeer.uid].sort().join('_');
         const colPath = 'privateChats/' + chatId + '/messages';
         const tempId  = 'tmp-' + crypto.randomUUID();
@@ -987,23 +1290,31 @@ class ChatApp {
         this.#pendingMessages.set(tempId, { tempId, text, uid: this.#currentUser.uid, colPath, resolved: false });
 
         if (!this.#connMon.isOnline) {
-            await this.#offlineQ.push({ tempId, colPath, msgData: { uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL, text, receiverUid: msgData.receiverUid } });
+            await this.#offlineQ.push({ tempId, colPath, msgData: { uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL, text: enc ? null : text, enc, tempId, receiverUid: msgData.receiverUid } });
             this.#markMsgStatus(tempId, 'offline');
             return;
+        }
+
+        // Entrega P2P via DataChannel (quando canal estiver aberto)
+        if (this.#p2pChannel?.isOpen && enc) {
+            this.#p2pChannel.send(JSON.stringify({
+                type: 'chat', enc, name: this.#getDisplayName(),
+                photoURL: this.#currentUser.photoURL || '', tempId
+            }));
         }
 
         const sendMs = Date.now();
         try {
             const docRef = await addDoc(collection(this.#db, colPath), {
                 uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL,
-                text, receiverUid: msgData.receiverUid, createdAt: serverTimestamp()
+                text: enc ? null : text, enc, tempId, receiverUid: msgData.receiverUid, createdAt: serverTimestamp()
             });
             this.#confirmedIds.add('priv-' + docRef.id);
             this.#latency.markConfirmed(tempId, 'priv-' + docRef.id, Date.now() - sendMs);
             this.#confirmPendingMessage(tempId, 'priv-' + docRef.id);
             // Atualiza metadado da conversa para notificar o destinatário na home
             setDoc(doc(this.#db, 'privateChats', chatId), {
-                lastText:    text,
+                lastText:    enc ? '🔒 Mensagem cifrada' : text,
                 senderUid:   this.#currentUser.uid,
                 senderName:  this.#getDisplayName(),
                 receiverUid: this.#privatePeer.uid,
@@ -1013,7 +1324,7 @@ class ChatApp {
         } catch (e) {
             console.error('[Chat] Erro ao enviar privado:', e);
             this.#markMsgStatus(tempId, 'failed');
-            await this.#offlineQ.push({ tempId, colPath, msgData: { uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL, text, receiverUid: msgData.receiverUid } });
+            await this.#offlineQ.push({ tempId, colPath, msgData: { uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL, text: enc ? null : text, enc, tempId, receiverUid: msgData.receiverUid } });
         }
     }
 
@@ -1122,13 +1433,14 @@ class ChatApp {
 
         const docs = [...snap.docs].reverse();
         const frag = document.createDocumentFragment();
-        docs.forEach(d => {
+        for (const d of docs) {
             const id = chatType === 'group' ? d.id : 'priv-' + d.id;
             if (!document.getElementById('msg-' + id)) {
-                const el = this.#buildMsgElement(id, d.data(), d.data().uid === this.#currentUser?.uid, false, chatType);
+                const data = await this.#decryptMsg(d.data(), chatType);
+                const el   = this.#buildMsgElement(id, data, data.uid === this.#currentUser?.uid, false, chatType);
                 frag.appendChild(el);
             }
-        });
+        }
 
         const prevH = container.scrollHeight;
         container.insertBefore(frag, btn ? btn.nextSibling : container.firstChild);
@@ -1364,6 +1676,8 @@ class ChatApp {
                     }
                 }
             });
+            // Distribuir chave de grupo E2E para usuários que ainda não a têm
+            this.#distributeGroupKey().catch(() => {});
         });
     }
 
@@ -1608,9 +1922,99 @@ class ChatApp {
         }
     }
 
+    // ── E2E Encryption ────────────────────────────────────
+    async #initE2E() {
+        if (!this.#currentUser) return;
+        try {
+            this.#e2e = await E2EManager.load(this.#currentUser.uid);
+            const pubKey = await this.#e2e.exportPublicKey();
+            await updateDoc(doc(this.#db, 'users', this.#currentUser.uid), { publicKey: pubKey }).catch(() => {});
+            this.#listenForGroupKeyStore();
+        } catch (e) {
+            console.error('[E2E] Erro ao inicializar:', e);
+            this.#e2e = null;
+        }
+    }
+
+    #listenForGroupKeyStore() {
+        if (!this.#currentUser || !this.#e2e) return;
+        this.#unsubGroupKeyStore?.(); this.#unsubGroupKeyStore = null;
+        const docRef = doc(this.#db, 'groupKeyStore', this.#currentUser.uid);
+        this.#unsubGroupKeyStore = onSnapshot(docRef, async snap => {
+            if (!snap.exists() || this.#e2e?.hasGroupKey) return;
+            const { enc, fromPub } = snap.data();
+            if (!enc || !fromPub) return;
+            try {
+                await this.#e2e.loadGroupKeyFrom(enc, fromPub, this.#currentUser.uid);
+            } catch (e) {
+                console.warn('[E2E] Falha ao importar chave de grupo:', e.message);
+            }
+        });
+    }
+
+    async #distributeGroupKey() {
+        if (!this.#e2e || !this.#currentUser) return;
+        if (!this.#e2e.hasGroupKey) {
+            await this.#e2e.generateGroupKey(this.#currentUser.uid);
+        }
+        const myPub = await this.#e2e.exportPublicKey();
+        for (const [uid, data] of this.#userDataMap.entries()) {
+            if (uid === this.#currentUser.uid) continue;
+            if (this.#groupKeyHolders.has(uid)) continue;
+            if (!data.publicKey) continue;
+            try {
+                const enc = await this.#e2e.encryptGroupKeyFor(data.publicKey);
+                await setDoc(doc(this.#db, 'groupKeyStore', uid), { enc, fromPub: myPub });
+                this.#groupKeyHolders.add(uid);
+            } catch (e) {
+                console.warn('[E2E] Erro ao distribuir chave para', uid, ':', e.message);
+            }
+        }
+    }
+
+    async #decryptMsg(rawData, chatType) {
+        if (!rawData.enc || !this.#e2e) return rawData;
+        try {
+            let plaintext;
+            if (chatType === 'group') {
+                plaintext = await this.#e2e.decryptWithGroupKey(rawData.enc);
+            } else {
+                const senderPub = rawData.uid === this.#currentUser?.uid
+                    ? this.#userDataMap.get(this.#privatePeer?.uid)?.publicKey
+                    : this.#userDataMap.get(rawData.uid)?.publicKey;
+                if (!senderPub) return rawData;
+                plaintext = await this.#e2e.decryptFromPeer(rawData.enc, senderPub);
+            }
+            return { ...rawData, text: plaintext };
+        } catch {
+            return { ...rawData, text: '🔒 [não foi possível decifrar]' };
+        }
+    }
+
+    async #handleP2PMessage(raw) {
+        try {
+            const msg = JSON.parse(raw);
+            if (msg.type !== 'chat' || !msg.enc || !this.#e2e || !this.#privatePeer) return;
+            const senderPub = this.#userDataMap.get(this.#privatePeer.uid)?.publicKey;
+            if (!senderPub) return;
+            const text = await this.#e2e.decryptFromPeer(msg.enc, senderPub);
+            const msgs = document.getElementById('chatPrivateMessages');
+            if (!msgs) return;
+            this.#p2pReceivedIds.add(msg.tempId);
+            this.#renderMsg(msgs, 'p2p-' + msg.tempId, {
+                uid:      this.#privatePeer.uid,
+                name:     msg.name,
+                photoURL: msg.photoURL || '',
+                text,
+                createdAt: null
+            }, true, 'private');
+        } catch (e) {
+            console.warn('[P2P] Mensagem inválida:', e.message);
+        }
+    }
+
     // ── Group Call ────────────────────────────────────────
     #listenForGroupCall() {
-        if (!this.#currentUser) return;
         this.#unsubGroupCallIn?.(); this.#unsubGroupCallIn = null;
         const q = query(
             collection(this.#db, 'groupCalls'),
@@ -1864,11 +2268,17 @@ class ChatApp {
         this.#unsubInbox?.();    this.#unsubInbox    = null;
         this.#unsubCallIn?.();        this.#unsubCallIn        = null;
         this.#unsubGroupCallIn?.(); this.#unsubGroupCallIn = null;
+        this.#unsubGroupKeyStore?.(); this.#unsubGroupKeyStore = null;
         clearInterval(this.#tokenRenewalTimer); this.#tokenRenewalTimer = null;
         this.#stopCallRing();
         if (this.#groupCall?.isActive) this.#groupCall.leaveCall().catch(() => {});
         this.#groupCall = null;
         this.#isAdmin   = false;
+        this.#p2pChannel?.close();
+        this.#p2pChannel = null;
+        this.#p2pReceivedIds.clear();
+        this.#groupKeyHolders.clear();
+        this.#e2e = null;
         this.#chatInitialized = false;
         this.#userCardMap.clear();
         this.#userDataMap.clear();
