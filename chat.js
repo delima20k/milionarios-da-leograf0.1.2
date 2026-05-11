@@ -21,6 +21,229 @@ import {
     getMessaging, getToken, onMessage, deleteToken
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging.js';
 
+// ──────────────────────────────────────────────────────────────
+// 📞 GROUP CALL MANAGER — WebRTC full-mesh para chamadas em grupo
+// ──────────────────────────────────────────────────────────────
+// Firestore:
+//   groupCalls/{callId}                             — metadado
+//   groupCalls/{callId}/peers/{uid}                 — participantes
+//   groupCalls/{callId}/signals/{lowerUid}_{higherUid} — offer/answer
+//   groupCalls/{callId}/ice/{fromUid}_{toUid}/{id}  — ICE candidates
+// Anti-glare: uid lexicograficamente menor é sempre o initiator (cria o offer)
+class GroupCallManager {
+    static #STUN = { iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+    ]};
+
+    #db;
+    #currentUser;
+    #callDocId    = null;
+    #localStream  = null;
+    #peerConns    = new Map();  // peerUid → RTCPeerConnection
+    #remoteAudios = new Map();  // peerUid → HTMLAudioElement
+    #unsubs       = [];
+    #isMuted      = false;
+    #onParticipants;
+    #onEnded;
+
+    constructor(db, currentUser, { onParticipants, onEnded }) {
+        this.#db            = db;
+        this.#currentUser   = currentUser;
+        this.#onParticipants = onParticipants;
+        this.#onEnded        = onEnded;
+    }
+
+    get callDocId() { return this.#callDocId; }
+    get isActive()  { return !!this.#localStream; }
+    get isMuted()   { return this.#isMuted; }
+
+    async startCall(callerName) {
+        if (this.isActive) return;
+        this.#localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const callRef = doc(collection(this.#db, 'groupCalls'));
+        this.#callDocId = callRef.id;
+        await setDoc(callRef, {
+            callerId: this.#currentUser.uid, callerName,
+            status: 'calling', createdAt: serverTimestamp()
+        });
+        await this.#joinRoom();
+    }
+
+    async joinCall(callId) {
+        if (this.isActive) return;
+        this.#callDocId   = callId;
+        this.#localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        await updateDoc(doc(this.#db, 'groupCalls', callId), { status: 'active' }).catch(() => {});
+        await this.#joinRoom();
+    }
+
+    async leaveCall() {
+        if (!this.#callDocId) return;
+        await updateDoc(
+            doc(this.#db, `groupCalls/${this.#callDocId}/peers/${this.#currentUser.uid}`),
+            { status: 'left' }
+        ).catch(() => {});
+        this.#cleanup();
+        this.#onEnded?.();
+    }
+
+    toggleMute() {
+        if (!this.#localStream) return this.#isMuted;
+        this.#isMuted = !this.#isMuted;
+        this.#localStream.getAudioTracks().forEach(t => { t.enabled = !this.#isMuted; });
+        return this.#isMuted;
+    }
+
+    async #joinRoom() {
+        const uid  = this.#currentUser.uid;
+        const name = this.#currentUser.displayName || 'Usuário';
+        await setDoc(
+            doc(this.#db, `groupCalls/${this.#callDocId}/peers/${uid}`),
+            { name, status: 'joined', joinedAt: serverTimestamp() }
+        );
+        this.#listenForPeers();
+        this.#listenForSignals();
+    }
+
+    #listenForPeers() {
+        const col   = collection(this.#db, `groupCalls/${this.#callDocId}/peers`);
+        const unsub = onSnapshot(col, snap => {
+            const participants = snap.docs
+                .filter(d => d.data().status === 'joined')
+                .map(d => ({ uid: d.id, name: d.data().name }));
+            this.#onParticipants?.(participants);
+
+            snap.docChanges().forEach(c => {
+                const peerUid = c.doc.id;
+                if (peerUid === this.#currentUser.uid) return;
+                const data = c.doc.data();
+                if (c.type === 'removed' || data.status === 'left') {
+                    this.#disconnectFromPeer(peerUid); return;
+                }
+                if (c.type === 'added' && data.status === 'joined') {
+                    if (this.#peerConns.has(peerUid)) return;
+                    // Anti-glare: uid menor é o initiator
+                    if (this.#currentUser.uid < peerUid) this.#createOfferTo(peerUid);
+                    // uid maior aguarda offer via #listenForSignals
+                }
+            });
+        });
+        this.#unsubs.push(unsub);
+    }
+
+    #listenForSignals() {
+        const myUid = this.#currentUser.uid;
+        const col   = collection(this.#db, `groupCalls/${this.#callDocId}/signals`);
+        const unsub = onSnapshot(col, snap => {
+            snap.docChanges().forEach(async c => {
+                if (c.type !== 'added' && c.type !== 'modified') return;
+                const [uid1, uid2] = c.doc.id.split('_');
+                if (!uid1 || !uid2) return;
+                const data = c.doc.data();
+                // Sou responder (uid2) — recebo offer de uid1
+                if (uid2 === myUid && data.offer && !data.answer && !this.#peerConns.has(uid1)) {
+                    await this.#handleOffer(uid1, data.offer, c.doc.ref);
+                }
+                // Sou initiator (uid1) — recebo answer de uid2
+                if (uid1 === myUid && data.answer) {
+                    const pc = this.#peerConns.get(uid2);
+                    if (pc && !pc.remoteDescription) {
+                        await pc.setRemoteDescription(
+                            new RTCSessionDescription(data.answer)
+                        ).catch(e => console.warn('[GroupCall] setRemoteDesc:', e.message));
+                    }
+                }
+            });
+        });
+        this.#unsubs.push(unsub);
+    }
+
+    async #createOfferTo(peerUid) {
+        const pc     = this.#buildPC(peerUid);
+        const myUid  = this.#currentUser.uid;
+        const sigRef = doc(this.#db, `groupCalls/${this.#callDocId}/signals/${myUid}_${peerUid}`);
+        this.#listenForIce(peerUid);
+        pc.onicecandidate = async e => {
+            if (e.candidate) {
+                await addDoc(
+                    collection(this.#db, `groupCalls/${this.#callDocId}/ice/${myUid}_${peerUid}`),
+                    e.candidate.toJSON()
+                ).catch(() => {});
+            }
+        };
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        await setDoc(sigRef, { offer: { type: offer.type, sdp: offer.sdp } });
+    }
+
+    async #handleOffer(fromUid, offer, sigRef) {
+        const pc    = this.#buildPC(fromUid);
+        const myUid = this.#currentUser.uid;
+        this.#listenForIce(fromUid);
+        pc.onicecandidate = async e => {
+            if (e.candidate) {
+                await addDoc(
+                    collection(this.#db, `groupCalls/${this.#callDocId}/ice/${myUid}_${fromUid}`),
+                    e.candidate.toJSON()
+                ).catch(() => {});
+            }
+        };
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await updateDoc(sigRef, { answer: { type: answer.type, sdp: answer.sdp } });
+    }
+
+    #listenForIce(fromUid) {
+        const myUid = this.#currentUser.uid;
+        const col   = collection(this.#db, `groupCalls/${this.#callDocId}/ice/${fromUid}_${myUid}`);
+        const unsub = onSnapshot(col, snap => {
+            snap.docChanges().forEach(async c => {
+                if (c.type !== 'added') return;
+                const pc = this.#peerConns.get(fromUid);
+                await pc?.addIceCandidate(new RTCIceCandidate(c.doc.data())).catch(() => {});
+            });
+        });
+        this.#unsubs.push(unsub);
+    }
+
+    #buildPC(peerUid) {
+        if (this.#peerConns.has(peerUid)) return this.#peerConns.get(peerUid);
+        const pc = new RTCPeerConnection(GroupCallManager.#STUN);
+        this.#peerConns.set(peerUid, pc);
+        this.#localStream.getTracks().forEach(t => pc.addTrack(t, this.#localStream));
+        pc.ontrack = e => {
+            let audio = this.#remoteAudios.get(peerUid);
+            if (!audio) { audio = new Audio(); audio.autoplay = true; this.#remoteAudios.set(peerUid, audio); }
+            if (e.streams?.[0]) { audio.srcObject = e.streams[0]; audio.play().catch(() => {}); }
+        };
+        pc.oniceconnectionstatechange = () => {
+            if (['disconnected', 'failed', 'closed'].includes(pc.iceConnectionState)) {
+                this.#disconnectFromPeer(peerUid);
+            }
+        };
+        return pc;
+    }
+
+    #disconnectFromPeer(uid) {
+        const pc = this.#peerConns.get(uid);
+        if (pc) { pc.close(); this.#peerConns.delete(uid); }
+        const audio = this.#remoteAudios.get(uid);
+        if (audio) { audio.srcObject = null; this.#remoteAudios.delete(uid); }
+    }
+
+    #cleanup() {
+        this.#unsubs.forEach(u => u()); this.#unsubs = [];
+        this.#peerConns.forEach(pc => pc.close()); this.#peerConns.clear();
+        this.#remoteAudios.forEach(a => { a.srcObject = null; }); this.#remoteAudios.clear();
+        this.#localStream?.getTracks().forEach(t => t.stop());
+        this.#localStream = null;
+        this.#callDocId   = null;
+        this.#isMuted     = false;
+    }
+}
+
 const FIREBASE_CONFIG = {
     apiKey:            'AIzaSyCIVshCdXm7Fp1X3kxGr5GZOF_jUBN3ChA',
     authDomain:        'chatmilhao.firebaseapp.com',
@@ -298,10 +521,15 @@ class ChatApp {
     #audioChunks   = [];
     #isRecording   = false;
 
-    // WebRTC
+    // WebRTC — 1:1
     #peerConn    = null;
     #localStream = null;
     #callDocId   = null;
+
+    // Chamada em grupo
+    #groupCall        = null;
+    #unsubGroupCallIn = null;
+    #isAdmin          = false;
 
     // Timers
     #tokenRenewalTimer = null;
@@ -463,7 +691,9 @@ class ChatApp {
         this.#subscribeOnline();
         this.#subscribeUsers();
         this.#subscribeInbox();
+        this.#isAdmin = userData.role === 'admin';
         this.#listenForIncomingCalls();
+        this.#listenForGroupCall();
         // initFCM aqui garante que o token seja salvo com o uid correto do usuário
         this.#initFCM();
         // Consome navegação pendente de clique em push (app estava fechado)
@@ -930,12 +1160,14 @@ class ChatApp {
         el.className = 'chat-msg ' + (isOwn ? 'chat-msg--own' : 'chat-msg--other');
         if (data.status === 'sending') el.classList.add('chat-msg--sending');
 
+        const canDelete = (isOwn || this.#isAdmin) && type !== 'optimistic' && !id.startsWith('tmp-');
+        const deleteTitle = isOwn ? 'Apagar mensagem' : '⚠️ Admin: apagar para todos';
         el.innerHTML =
             (!isOwn ? avHtml : '') +
             `<div class="chat-msg-bubble">` +
             (!isOwn ? `<span class="chat-msg-name">${this.#esc(data.name || 'Anônimo')}</span>` : '') +
             bodyHtml +
-            (isOwn ? `<button class="chat-msg-delete" title="Apagar mensagem">🗑</button>` : '') +
+            (canDelete ? `<button class="chat-msg-delete" title="${deleteTitle}">🗑</button>` : '') +
             '</div>' +
             (isOwn ? avHtml : '');
 
@@ -1376,6 +1608,104 @@ class ChatApp {
         }
     }
 
+    // ── Group Call ────────────────────────────────────────
+    #listenForGroupCall() {
+        if (!this.#currentUser) return;
+        this.#unsubGroupCallIn?.(); this.#unsubGroupCallIn = null;
+        const q = query(
+            collection(this.#db, 'groupCalls'),
+            where('status', '==', 'calling')
+        );
+        this.#unsubGroupCallIn = onSnapshot(q, snap => {
+            snap.docChanges().forEach(c => {
+                if (c.type !== 'added') return;
+                const data = c.doc.data();
+                if (data.callerId === this.#currentUser.uid) return;
+                if (this.#groupCall?.isActive || this.#peerConn) return;
+                this.#showGroupCallInvite(c.doc.id, data.callerName || 'Alguém');
+            });
+        });
+    }
+
+    #showGroupCallInvite(callId, callerName) {
+        const banner = document.getElementById('groupCallInvite');
+        const nameEl = document.getElementById('groupCallInviteName');
+        if (!banner || !nameEl) return;
+        nameEl.textContent = callerName;
+        banner.classList.remove('group-call-invite--hidden');
+        document.getElementById('btnJoinGroupCall').onclick = async () => {
+            banner.classList.add('group-call-invite--hidden');
+            await this.#joinGroupCall(callId);
+        };
+        document.getElementById('btnDismissGroupCall').onclick = () => {
+            banner.classList.add('group-call-invite--hidden');
+        };
+    }
+
+    async #startGroupCall() {
+        if (this.#groupCall?.isActive) { alert('Você já está em uma chamada de grupo.'); return; }
+        if (this.#peerConn) { alert('Você já está em uma chamada individual.'); return; }
+        try {
+            this.#groupCall = new GroupCallManager(this.#db, this.#currentUser, {
+                onParticipants: p => this.#updateGroupCallBar(p),
+                onEnded:        () => this.#onGroupCallEnded()
+            });
+            await this.#groupCall.startCall(this.#getDisplayName());
+            this.#updateGroupCallBar([{ uid: this.#currentUser.uid, name: this.#getDisplayName() }]);
+        } catch (e) {
+            console.error('[GroupCall] Erro ao iniciar:', e);
+            alert('Não foi possível iniciar a chamada. Permita o acesso ao microfone.');
+            this.#groupCall = null;
+        }
+    }
+
+    async #joinGroupCall(callId) {
+        if (this.#groupCall?.isActive) return;
+        if (this.#peerConn) { alert('Você já está em uma chamada individual.'); return; }
+        try {
+            this.#groupCall = new GroupCallManager(this.#db, this.#currentUser, {
+                onParticipants: p => this.#updateGroupCallBar(p),
+                onEnded:        () => this.#onGroupCallEnded()
+            });
+            await this.#groupCall.joinCall(callId);
+        } catch (e) {
+            console.error('[GroupCall] Erro ao entrar:', e);
+            alert('Não foi possível entrar na chamada. Permita o acesso ao microfone.');
+            this.#groupCall = null;
+        }
+    }
+
+    async #leaveGroupCall() {
+        await this.#groupCall?.leaveCall();
+    }
+
+    #toggleMute() {
+        if (!this.#groupCall) return;
+        const isMuted = this.#groupCall.toggleMute();
+        const btn = document.getElementById('btnToggleMute');
+        if (btn) btn.textContent = isMuted ? '🔈 Desmutar' : '🔇 Mudo';
+    }
+
+    #updateGroupCallBar(participants) {
+        const bar = document.getElementById('groupCallBar');
+        if (!bar) return;
+        bar.classList.remove('group-call-bar--hidden');
+        const el = document.getElementById('groupCallParticipants');
+        if (el) {
+            el.innerHTML = participants
+                .map(p => `<span class="group-call-participant">${this.#esc(p.name)}</span>`)
+                .join('');
+        }
+    }
+
+    #onGroupCallEnded() {
+        document.getElementById('groupCallBar')?.classList.add('group-call-bar--hidden');
+        document.getElementById('groupCallInvite')?.classList.add('group-call-invite--hidden');
+        const btn = document.getElementById('btnToggleMute');
+        if (btn) btn.textContent = '🔇 Mudo';
+        this.#groupCall = null;
+    }
+
     // ── WebRTC ────────────────────────────────────────────
     #listenForIncomingCalls() {
         if (!this.#currentUser) return;
@@ -1532,9 +1862,13 @@ class ChatApp {
         this.#unsubOnline?.();   this.#unsubOnline   = null;
         this.#unsubUsers?.();    this.#unsubUsers    = null;
         this.#unsubInbox?.();    this.#unsubInbox    = null;
-        this.#unsubCallIn?.();   this.#unsubCallIn   = null;
+        this.#unsubCallIn?.();        this.#unsubCallIn        = null;
+        this.#unsubGroupCallIn?.(); this.#unsubGroupCallIn = null;
         clearInterval(this.#tokenRenewalTimer); this.#tokenRenewalTimer = null;
         this.#stopCallRing();
+        if (this.#groupCall?.isActive) this.#groupCall.leaveCall().catch(() => {});
+        this.#groupCall = null;
+        this.#isAdmin   = false;
         this.#chatInitialized = false;
         this.#userCardMap.clear();
         this.#userDataMap.clear();
@@ -1675,8 +2009,13 @@ class ChatApp {
         document.getElementById('btnBackFromGroup')?.addEventListener('click',   () => this.#backToHome());
         document.getElementById('btnBackFromPrivate')?.addEventListener('click', () => this.#backToHome());
 
-        // Chamada
+        // Chamada 1:1
         document.getElementById('btnEndCall')?.addEventListener('click', () => this.#endCall());
+
+        // Chamada em grupo
+        document.getElementById('btnGroupCall')?.addEventListener('click',     () => this.#startGroupCall());
+        document.getElementById('btnLeaveGroupCall')?.addEventListener('click', () => this.#leaveGroupCall());
+        document.getElementById('btnToggleMute')?.addEventListener('click',     () => this.#toggleMute());
 
         // Logout
         document.getElementById('btnLogoutChat')?.addEventListener('click',    () => this.#logout());

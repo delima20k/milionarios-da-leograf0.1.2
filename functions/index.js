@@ -381,3 +381,58 @@ exports.onCallCreated = onDocumentCreated(
         }, 'Chamada Push');
     }
 );
+
+// ── Notificação push: chamada de voz em grupo iniciada ────────
+exports.onGroupCallCreated = onDocumentCreated(
+    { document: 'groupCalls/{callId}', region: 'us-central1' },
+    async (event) => {
+        const data = event.data?.data();
+        if (!data || data.status !== 'calling') return;
+
+        const callerName = data.callerName || 'Alguém';
+        const callerUid  = data.callerId   || '';
+
+        // Envia para todos os usuários exceto o próprio caller
+        const snap   = await db.collection('fcmTokens').get();
+        const tokens = snap.docs.filter(d => d.data().uid !== callerUid).map(d => d.id);
+        if (!tokens.length) return;
+
+        const callId = event.params.callId;
+        await _sendMulticast(tokens, {
+            notification: { title: `🎤 ${callerName} iniciou chamada de grupo`, body: 'Toque para entrar' },
+            data: {
+                chatType:   'chamada-grupo',
+                callId,
+                senderName: callerName,
+                link:       APP_URL
+            },
+            webpush: {
+                headers: { Urgency: 'high' },
+                notification: {
+                    title:              `🎤 ${callerName} iniciou chamada de grupo`,
+                    body:               'Toque para entrar',
+                    icon:               APP_URL + 'icon-192.png',
+                    badge:              APP_URL + 'icon-192.png',
+                    tag:                'chamada-grupo',
+                    renotify:           true,
+                    requireInteraction: true,
+                    silent:             false,
+                    vibrate:            [300, 200, 300, 200, 300]
+                },
+                fcmOptions: { link: APP_URL }
+            },
+            android: {
+                priority: 'high',
+                ttl: 30_000,
+                notification: {
+                    sound:    'default',
+                    channelId: 'chamadas',
+                    notificationPriority: 'PRIORITY_HIGH'
+                }
+            },
+            apns: {
+                payload: { aps: { sound: 'default', badge: 1, contentAvailable: true } }
+            }
+        }, 'Chamada Grupo Push');
+    }
+);

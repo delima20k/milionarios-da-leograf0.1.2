@@ -247,6 +247,7 @@
                     <div class="chat-conv-header">
                         <button class="chat-back-btn" id="btnBackFromGroup">‹ Voltar</button>
                         <span class="chat-conv-title">🏆 Milionários da Lotofácil</span>
+                        <button class="btn-group-call" id="btnGroupCall" title="Chamada de voz em grupo">🎤 Voz</button>
                     </div>
                     <div class="chat-messages" id="chatGroupMessages"></div>
                     <div class="chat-typing-bar" id="chatGroupTypingBar" aria-live="polite"></div>
@@ -605,7 +606,7 @@
     </div>
 
     <script src="script.js"></script>
-    <script type="module" src="chat.js?v=9"></script>
+    <script type="module" src="chat.js?v=10"></script>
     <script>
         // Limpar SWs antigos com escopo errado e registrar o correto
         if ('serviceWorker' in navigator) {
@@ -641,12 +642,29 @@
         </div>
     </div>
 
-    <!-- 📞 BARRA DE CHAMADA ATIVA -->
+    <!-- 📞 BARRA DE CHAMADA ATIVA (1:1) -->
     <div class="call-bar call-bar--hidden" id="callBar">
         <span class="call-bar-icon">📞</span>
         <span class="call-bar-name" id="callBarName"></span>
         <span class="call-bar-status" id="callBarStatus"></span>
         <button class="btn-call-end" id="btnEndCall">📵 Encerrar</button>
+    </div>
+
+    <!-- 🎤 BARRA DE CHAMADA EM GRUPO ATIVA -->
+    <div class="group-call-bar group-call-bar--hidden" id="groupCallBar">
+        <span class="group-call-bar-icon">🎤</span>
+        <span class="group-call-bar-label">Em chamada:</span>
+        <div class="group-call-participants" id="groupCallParticipants"></div>
+        <button class="btn-call-mute" id="btnToggleMute" title="Mudo/Ativo">🔇 Mudo</button>
+        <button class="btn-call-end" id="btnLeaveGroupCall">📵 Sair</button>
+    </div>
+
+    <!-- 📞 BANNER DE CONVITE PARA CHAMADA DE GRUPO -->
+    <div class="group-call-invite group-call-invite--hidden" id="groupCallInvite">
+        <span class="group-call-invite-icon">📞</span>
+        <span><strong id="groupCallInviteName"></strong> iniciou uma chamada de voz em grupo</span>
+        <button class="btn-call-accept" id="btnJoinGroupCall">📞 Entrar</button>
+        <button class="btn-call-dismiss" id="btnDismissGroupCall">✕</button>
     </div>
 
 </body>
