@@ -1490,9 +1490,9 @@ class ChatApp {
             onMessage(this.#messaging, payload => {
                 const n    = payload.notification || {};
                 const data = payload.data || {};
-                // Chamada no foreground: o Firestore #listenForIncomingCalls já exibe o
-                // modal e inicia o ring. Não exibir uma 2ª notificação sobreposta.
-                if (data.chatType === 'chamada') return;
+                // Chamada no foreground: o Firestore listener já exibe o modal/banner.
+                // Não duplicar com uma 2ª notificação push sobreposta.
+                if (data.chatType === 'chamada' || data.chatType === 'chamada-grupo') return;
                 // payload.notification só é populado se 'notification' estiver no nível raiz do FCM.
                 // Com webpush.notification, usa data.title/data.body como fonte principal.
                 // n.title/n.body populados quando notification está no nível raiz do FCM (foreground)
