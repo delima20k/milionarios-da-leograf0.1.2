@@ -256,7 +256,7 @@ async function _sendChatPush(tokens, title, body, chatType, senderId, senderName
             },
             fcmOptions: { link: APP_URL }
         },
-        android: { priority: 'high', ttl: '60s', notification: { sound: 'default', channelId: 'chat-messages', defaultVibrateTimings: true } },
+        android: { priority: 'high', ttl: 60_000, notification: { sound: 'default', channelId: 'chat-messages', defaultVibrateTimings: true } },
         apns:    { payload: { aps: { sound: 'default', badge: 1, contentAvailable: true } } }
     }, `Chat Push ${chatType}`);
 }
@@ -342,7 +342,7 @@ exports.onCallCreated = onDocumentCreated(
                 },
                 fcmOptions: { link: APP_URL }
             },
-            android: { priority: 'high', ttl: '30s', notification: { sound: 'default', channelId: 'chamadas' } },
+            android: { priority: 'high', ttl: 30_000, notification: { sound: 'default', channelId: 'chamadas' } },
             apns:    { payload: { aps: { sound: 'default', badge: 1, contentAvailable: true } } }
         }, 'Chamada Push');
     }
