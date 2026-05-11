@@ -17,6 +17,7 @@ const _fcmMessaging = firebase.messaging();
 const _FCM_URL = 'https://delima20k.github.io/milionarios-da-leograf0.1.2/';
 
 function _fcmResolveTag(data) {
+    if (data.chatType === 'chamada') return 'chamada-recebida';
     if (data.chatType === 'grupo')   return 'chat-grupo';
     if (data.chatType === 'privado') return 'chat-privado-' + (data.senderId || 'unknown');
     return 'lotofacil-resultado';
@@ -28,11 +29,37 @@ function _fcmResolveVibrate(data) {
 
 // Fallback para pushes data-only ou tipos futuros sem webpush.notification.
 // Chat e Lotofácil usam webpush.notification → browser exibe automaticamente.
+// Chamadas usam este handler para garantir requireInteraction + actions.
 _fcmMessaging.onBackgroundMessage(payload => {
-    const n     = payload.notification || {};
-    const data  = payload.data         || {};
+    const n    = payload.notification || {};
+    const data = payload.data         || {};
     const title = n.title || data.title || '🎱 Milionários da Leograf';
     const body  = n.body  || data.body  || '';
+
+    if (data.chatType === 'chamada') {
+        return self.registration.showNotification(title, {
+            body,
+            icon:               _FCM_URL + 'icon-192.png',
+            badge:              _FCM_URL + 'icon-192.png',
+            tag:                'chamada-recebida',
+            renotify:           true,
+            requireInteraction: true,
+            silent:             false,
+            vibrate:            [500, 200, 500, 200, 500, 200, 500, 200, 500],
+            actions: [
+                { action: 'rejeitar', title: '❌ Recusar' },
+                { action: 'aceitar',  title: '✅ Aceitar' }
+            ],
+            data: {
+                url:        data.link || _FCM_URL,
+                chatType:   'chamada',
+                callId:     data.callId   || '',
+                senderId:   data.senderId || '',
+                senderName: data.senderName || ''
+            }
+        });
+    }
+
     self.registration.showNotification(title, {
         body,
         icon:     _FCM_URL + 'icon-192.png',
@@ -45,8 +72,8 @@ _fcmMessaging.onBackgroundMessage(payload => {
 });
 // ─────────────────────────────────────────────────────────────────
 
-const STATIC_CACHE  = 'milionarios-static-v5.1';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v5.1';
+const STATIC_CACHE  = 'milionarios-static-v5.2';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v5.2';
 
 // Recursos essenciais para cache
 // Áudios (.mp3) removidos do cache: Range Requests (HTTP 206) são incompatíveis com cache.put()
@@ -233,8 +260,31 @@ self.addEventListener('notificationclick', event => {
   const senderId   = notifData.senderId  || '';
   const senderName = notifData.senderName || '';
   const concurso   = notifData.concurso  || '';
+  const callId     = notifData.callId    || '';
+  const action     = event.action        || '';
 
-  // Monta a mensagem de navegação conforme o tipo da notificação
+  // ── Chamada: botões Aceitar / Rejeitar ──────────────────────
+  if (chatType === 'chamada') {
+    const msg = action === 'rejeitar'
+      ? { type: 'REJECT_CALL', callId }
+      : { type: 'ACCEPT_CALL', callId, senderName };
+    event.waitUntil(
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async list => {
+        let client = list.find(c => c.url.startsWith(_FCM_URL) && 'focus' in c);
+        if (client) {
+          await client.focus();
+        } else {
+          client = await clients.openWindow(target);
+          // Aguarda o cliente carregar antes de postar a mensagem
+          await new Promise(res => setTimeout(res, 1500));
+        }
+        client?.postMessage(msg);
+      })
+    );
+    return;
+  }
+
+  // ── Chat / Lotofácil ─────────────────────────────────────────
   let navMsg = null;
   if (chatType === 'lotofacil') {
     navMsg = { type: 'NAVIGATE_TO_LOTOFACIL', concurso };

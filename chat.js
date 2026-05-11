@@ -288,6 +288,10 @@ class ChatApp {
     #audio       = new Audio('./notification.mp3');
     #audioIn     = new Audio('./ring-chat.mp3');
     #remoteAudio = new Audio();
+    #ringTone    = new Audio('./ring-chat.mp3');
+
+    // Ring de chamada recebida
+    #ringVibrateTimer = null;
 
     // Gravação de voz
     #mediaRecorder = null;
@@ -1254,6 +1258,9 @@ class ChatApp {
             onMessage(this.#messaging, payload => {
                 const n    = payload.notification || {};
                 const data = payload.data || {};
+                // Chamada no foreground: o Firestore #listenForIncomingCalls já exibe o
+                // modal e inicia o ring. Não exibir uma 2ª notificação sobreposta.
+                if (data.chatType === 'chamada') return;
                 // payload.notification só é populado se 'notification' estiver no nível raiz do FCM.
                 // Com webpush.notification, usa data.title/data.body como fonte principal.
                 // n.title/n.body populados quando notification está no nível raiz do FCM (foreground)
@@ -1391,14 +1398,38 @@ class ChatApp {
         if (!modal || !nameEl) return;
         nameEl.textContent = callerName;
         modal.classList.remove('call-modal--hidden');
+        // Inicia ringtone em loop + vibração contínua
+        this.#ringTone.loop        = true;
+        this.#ringTone.currentTime = 0;
+        this.#ringTone.play().catch(() => {});
+        this.#startCallVibration();
         document.getElementById('btnAcceptCall').onclick = async () => {
+            this.#stopCallRing();
             modal.classList.add('call-modal--hidden');
             await this.#acceptCall(callId, callerName);
         };
         document.getElementById('btnRejectCall').onclick = async () => {
+            this.#stopCallRing();
             modal.classList.add('call-modal--hidden');
             await updateDoc(doc(this.#db, 'calls', callId), { status: 'rejected' }).catch(() => {});
         };
+    }
+
+    // Padrão de vibração contínua enquanto o telefone toca (1 ciclo = 1600ms)
+    #startCallVibration() {
+        if (!('vibrate' in navigator)) return;
+        const pattern = [500, 300, 500, 300];
+        navigator.vibrate(pattern);
+        this.#ringVibrateTimer = setInterval(() => navigator.vibrate(pattern), 1600);
+    }
+
+    // Para o ringtone, a vibração e limpa o timer
+    #stopCallRing() {
+        this.#ringTone.pause();
+        this.#ringTone.currentTime = 0;
+        clearInterval(this.#ringVibrateTimer);
+        this.#ringVibrateTimer = null;
+        navigator.vibrate?.(0);
     }
 
     async #startCall(peer) {
@@ -1480,6 +1511,7 @@ class ChatApp {
     }
 
     async #endCall() {
+        this.#stopCallRing();
         this.#peerConn?.close(); this.#peerConn = null;
         this.#localStream?.getTracks().forEach(t => t.stop()); this.#localStream = null;
         this.#remoteAudio.srcObject = null;
@@ -1502,6 +1534,7 @@ class ChatApp {
         this.#unsubInbox?.();    this.#unsubInbox    = null;
         this.#unsubCallIn?.();   this.#unsubCallIn   = null;
         clearInterval(this.#tokenRenewalTimer); this.#tokenRenewalTimer = null;
+        this.#stopCallRing();
         this.#chatInitialized = false;
         this.#userCardMap.clear();
         this.#userDataMap.clear();
@@ -1664,6 +1697,19 @@ class ChatApp {
             document.getElementById('chatOnlinePanel')?.classList.toggle('chat-online-panel--hidden')
         );
 
+        // Chamada: aceitar/rejeitar via clique em botão da notificação push
+        window.addEventListener('call-action', e => {
+            const { type, callId, senderName } = e.detail || {};
+            if (!callId) return;
+            document.getElementById('callModal')?.classList.add('call-modal--hidden');
+            this.#stopCallRing();
+            if (type === 'ACCEPT_CALL') {
+                this.#acceptCall(callId, senderName || 'Alguém').catch(() => {});
+            } else if (type === 'REJECT_CALL') {
+                updateDoc(doc(this.#db, 'calls', callId), { status: 'rejected' }).catch(() => {});
+            }
+        });
+
         // Roteamento após clique em notificação push
         window.addEventListener('navigate-to-chat', e => {
             const { chatType, senderId, senderName } = e.detail || {};
@@ -1687,6 +1733,16 @@ if ('serviceWorker' in navigator) {
             // O app recarrega a fila via ConnectionMonitor.onOnline; 
             // aqui disparamos via evento customizado caso necessário
             window.dispatchEvent(new Event('online'));
+        }
+        if (e.data?.type === 'ACCEPT_CALL') {
+            window.dispatchEvent(new CustomEvent('call-action', {
+                detail: { type: 'ACCEPT_CALL', callId: e.data.callId, senderName: e.data.senderName }
+            }));
+        }
+        if (e.data?.type === 'REJECT_CALL') {
+            window.dispatchEvent(new CustomEvent('call-action', {
+                detail: { type: 'REJECT_CALL', callId: e.data.callId }
+            }));
         }
         if (e.data?.type === 'NAVIGATE_TO_CHAT') {
             window.dispatchEvent(new CustomEvent('navigate-to-chat', { detail: e.data }));

@@ -326,24 +326,58 @@ exports.onCallCreated = onDocumentCreated(
         const tokens = snap.docs.map(d => d.id);
         if (tokens.length === 0) return;
 
+        const callId = event.params.callId;
         await _sendMulticast(tokens, {
-            notification: { title: `📞 ${callerName}`, body: 'Ligação recebida' },
-            data: { chatType: 'chamada', senderId: data.callerId || '', senderName: callerName, link: APP_URL },
+            notification: { title: `📞 ${callerName}`, body: 'Toque para atender' },
+            data: {
+                chatType:   'chamada',
+                callId,
+                senderId:   data.callerId || '',
+                senderName: callerName,
+                link:       APP_URL
+            },
             webpush: {
                 headers: { Urgency: 'high' },
                 notification: {
-                    title:    `📞 ${callerName}`,
-                    body:     'Ligação recebida',
-                    icon:     APP_URL + 'icon-192.png',
-                    badge:    APP_URL + 'icon-192.png',
-                    tag:      'chamada-recebida',
-                    renotify: true,
-                    vibrate:  [500, 200, 500, 200, 500]
+                    title:               `📞 ${callerName}`,
+                    body:                'Toque para atender',
+                    icon:                APP_URL + 'icon-192.png',
+                    badge:               APP_URL + 'icon-192.png',
+                    tag:                 'chamada-recebida',
+                    renotify:            true,
+                    requireInteraction:  true,
+                    silent:              false,
+                    vibrate:             [500, 200, 500, 200, 500, 200, 500, 200, 500],
+                    actions: [
+                        { action: 'rejeitar', title: '❌ Recusar' },
+                        { action: 'aceitar',  title: '✅ Aceitar' }
+                    ]
                 },
                 fcmOptions: { link: APP_URL }
             },
-            android: { priority: 'high', ttl: 30_000, notification: { sound: 'default', channelId: 'chamadas' } },
-            apns:    { payload: { aps: { sound: 'default', badge: 1, contentAvailable: true } } }
+            android: {
+                priority: 'high',
+                ttl: 30_000,
+                notification: {
+                    sound:                 'default',
+                    channelId:             'chamadas',
+                    notificationPriority:  'PRIORITY_MAX',
+                    visibility:            'PUBLIC',
+                    sticky:                true,
+                    defaultVibrateTimings: false,
+                    vibrateTimingsMillis:  [0, 500, 200, 500, 200, 500, 200, 500, 200, 500]
+                }
+            },
+            apns: {
+                payload: {
+                    aps: {
+                        sound:             'default',
+                        badge:             1,
+                        contentAvailable:  true,
+                        interruptionLevel: 'time-sensitive'
+                    }
+                }
+            }
         }, 'Chamada Push');
     }
 );
