@@ -33,7 +33,9 @@ import {
 class GroupCallManager {
     static #STUN = { iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' }
     ]};
 
     #db;
@@ -399,8 +401,15 @@ class E2EManager {
 //   p2pSignals/{chatId}/ice/{uid}/{id} — ICE candidates
 // Anti-glare: uid lexicograficamente menor cria o offer
 class P2PChannel {
-    static #STUN    = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
-    static #TIMEOUT = 6000; // ms antes de desistir da conexão P2P
+    static #STUN    = { iceServers: [
+        { urls: 'stun:stun.l.google.com:19302'  },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' }
+    ]};
+    static #TIMEOUT       = 6000;  // ms antes de desistir da conexão P2P
+    static #HEARTBEAT_MS  = 25_000;
+    static #MAX_RECONNECT = 3;
 
     #db;
     #myUid;
@@ -411,20 +420,30 @@ class P2PChannel {
     #unsubs  = [];
     #onMessage;
     #onStateChange;
+    #onReconnecting;
 
-    constructor(db, myUid, peerUid, chatId, { onMessage, onStateChange } = {}) {
-        this.#db            = db;
-        this.#myUid         = myUid;
-        this.#peerUid       = peerUid;
-        this.#chatId        = chatId;
-        this.#onMessage     = onMessage     || (() => {});
-        this.#onStateChange = onStateChange || (() => {});
+    // heartbeat
+    #heartbeatTimer  = null;
+    #pongMissed      = 0;
+    // reconnect
+    #reconnectCount  = 0;
+    #reconnectTimer  = null;
+    #destroyed       = false;
+
+    constructor(db, myUid, peerUid, chatId, { onMessage, onStateChange, onReconnecting } = {}) {
+        this.#db             = db;
+        this.#myUid          = myUid;
+        this.#peerUid        = peerUid;
+        this.#chatId         = chatId;
+        this.#onMessage      = onMessage      || (() => {});
+        this.#onStateChange  = onStateChange  || (() => {});
+        this.#onReconnecting = onReconnecting || (() => {});
     }
 
     get isOpen() { return this.#channel?.readyState === 'open'; }
 
     async connect() {
-        this.close();
+        this.#_closeInternals();
         this.#pc     = new RTCPeerConnection(P2PChannel.#STUN);
         const sigRef = doc(this.#db, 'p2pSignals', this.#chatId);
         const isInit = this.#myUid < this.#peerUid; // anti-glare
@@ -437,8 +456,10 @@ class P2PChannel {
                 { ...e.candidate.toJSON(), fromUid: this.#myUid });
         };
         this.#pc.onconnectionstatechange = () => {
-            this.#onStateChange(this.#pc.connectionState);
-            if (['failed', 'disconnected', 'closed'].includes(this.#pc.connectionState)) this.close();
+            const state = this.#pc.connectionState;
+            this.#onStateChange(state);
+            if (['failed', 'disconnected'].includes(state)) this.#scheduleReconnect();
+            if (state === 'closed') this.#_closeInternals();
         };
 
         if (isInit) {
@@ -482,7 +503,7 @@ class P2PChannel {
         });
         this.#unsubs.push(unsubIce);
 
-        setTimeout(() => { if (!this.isOpen) this.close(); }, P2PChannel.#TIMEOUT);
+        setTimeout(() => { if (!this.isOpen) this.#_closeInternals(); }, P2PChannel.#TIMEOUT);
     }
 
     send(data) {
@@ -491,7 +512,18 @@ class P2PChannel {
         return true;
     }
 
+    /** Destrói permanentemente o canal (não tenta reconectar). */
     close() {
+        this.#destroyed = true;
+        clearTimeout(this.#reconnectTimer);
+        this.#_closeInternals();
+    }
+
+    // Fecha conexão interna sem marcar como destroyed (permite reconnect)
+    #_closeInternals() {
+        clearInterval(this.#heartbeatTimer);
+        this.#heartbeatTimer = null;
+        this.#pongMissed     = 0;
         this.#unsubs.forEach(u => u());
         this.#unsubs = [];
         this.#channel?.close();
@@ -500,10 +532,55 @@ class P2PChannel {
         this.#pc      = null;
     }
 
+    #scheduleReconnect() {
+        if (this.#destroyed) return;
+        if (this.#reconnectCount >= P2PChannel.#MAX_RECONNECT) {
+            this.#destroyed = true; // fallback permanente para Firestore
+            return;
+        }
+        const delay = 2 ** (this.#reconnectCount + 1) * 1000; // 2s, 4s, 8s
+        this.#reconnectCount++;
+        this.#onReconnecting(this.#reconnectCount);
+        clearTimeout(this.#reconnectTimer);
+        this.#reconnectTimer = setTimeout(() => {
+            if (!this.#destroyed) this.connect().catch(() => {});
+        }, delay);
+    }
+
     #setupChannel() {
-        this.#channel.onopen    = () => this.#onStateChange('open');
-        this.#channel.onclose   = () => this.#onStateChange('closed');
-        this.#channel.onmessage = e  => this.#onMessage(e.data);
+        this.#channel.onopen = () => {
+            this.#reconnectCount = 0; // reset contador ao reconectar com sucesso
+            this.#onStateChange('open');
+            this.#startHeartbeat();
+        };
+        this.#channel.onclose   = () => { this.#onStateChange('closed'); };
+        this.#channel.onmessage = e  => {
+            if (e.data === '{"type":"ping"}') {
+                this.#channel?.readyState === 'open' && this.#channel.send('{"type":"pong"}');
+                return;
+            }
+            if (e.data === '{"type":"pong"}') {
+                this.#pongMissed = 0;
+                return;
+            }
+            this.#onMessage(e.data);
+        };
+    }
+
+    #startHeartbeat() {
+        clearInterval(this.#heartbeatTimer);
+        this.#pongMissed    = 0;
+        this.#heartbeatTimer = setInterval(() => {
+            if (!this.isOpen) { clearInterval(this.#heartbeatTimer); return; }
+            this.#pongMissed++;
+            if (this.#pongMissed >= 3) {
+                clearInterval(this.#heartbeatTimer);
+                this.#_closeInternals();
+                this.#scheduleReconnect();
+                return;
+            }
+            this.#channel.send('{"type":"ping"}');
+        }, P2PChannel.#HEARTBEAT_MS);
     }
 }
 
@@ -558,13 +635,19 @@ class MediaUploader {
         MediaUploader.validate(file);
         const type = MediaUploader.resolveType(file.type);
 
-        // 1. Compressão / thumbnail
+        // 1. Compressão / thumbnail (paralelo quando ambos usam createImageBitmap)
         let uploadFile   = file;
         let thumbnailUrl = null;
         if (type === 'image') {
-            uploadFile = await this.#compressImage(file);
-            const thumbBlob = await this.#generateImageThumbnail(file);
-            thumbnailUrl    = await this.#uploadRaw(thumbBlob, `thumbnails/${this.#uid}/${Date.now()}_thumb.webp`);
+            // Cria o bitmap uma única vez e passa para ambas as funções
+            const bmp = await createImageBitmap(file);
+            const [compressed, thumbBlob] = await Promise.all([
+                this.#compressImageFromBitmap(bmp, file.name),
+                this.#generateImageThumbnailFromBitmap(bmp)
+            ]);
+            bmp.close();
+            uploadFile   = compressed;
+            thumbnailUrl = await this.#uploadRaw(thumbBlob, `thumbnails/${this.#uid}/${Date.now()}_thumb.webp`);
         } else if (type === 'video') {
             const thumbBlob = await this.#generateVideoThumbnail(file).catch(() => null);
             if (thumbBlob) thumbnailUrl = await this.#uploadRaw(thumbBlob, `thumbnails/${this.#uid}/${Date.now()}_vthumb.webp`);
@@ -592,8 +675,9 @@ class MediaUploader {
     cancel() { this.#activeTask?.cancel(); this.#activeTask = null; }
 
     // ── Compressão ───────────────────────────────────────────
-    async #compressImage(file) {
-        const bmp    = await createImageBitmap(file);
+    // Ambos os métodos recebem um ImageBitmap já criado (não criam outro),
+    // permitindo chamá-los em paralelo sem decodificar a imagem duas vezes.
+    async #compressImageFromBitmap(bmp) {
         const MAX    = 1280;
         const ratio  = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
         const canvas = Object.assign(document.createElement('canvas'), {
@@ -601,12 +685,10 @@ class MediaUploader {
             height: Math.round(bmp.height * ratio)
         });
         canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
-        bmp.close();
         return new Promise(res => canvas.toBlob(b => res(b), 'image/webp', 0.82));
     }
 
-    async #generateImageThumbnail(file) {
-        const bmp    = await createImageBitmap(file);
+    async #generateImageThumbnailFromBitmap(bmp) {
         const SIZE   = 200;
         const ratio  = Math.min(SIZE / bmp.width, SIZE / bmp.height);
         const canvas = Object.assign(document.createElement('canvas'), {
@@ -614,7 +696,6 @@ class MediaUploader {
             height: Math.round(bmp.height * ratio)
         });
         canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
-        bmp.close();
         return new Promise(res => canvas.toBlob(b => res(b), 'image/webp', 0.7));
     }
 
@@ -1110,8 +1191,8 @@ class FileMessageRenderer {
         try {
             let blobUrl = mediaUrl;
             if (mediaKey && mediaIv) {
-                blobUrl = await MediaUploader.decryptMedia(mediaUrl, mediaKey, mediaIv);
-                FileMessageRenderer.#blobUrls.add(blobUrl);
+                // Usa cache LRU para evitar re-fetch + re-decrypt
+                blobUrl = await _decryptCache.getOrDecrypt(mediaUrl, mediaKey, mediaIv);
             }
             if (type === 'video') {
                 inner.innerHTML = `<video src="${blobUrl}" controls autoplay class="lightbox-video"></video>`;
@@ -1203,38 +1284,70 @@ const FIREBASE_CONFIG = {
 };
 
 // ──────────────────────────────────────────────────────────────
-// 📊 LATENCY LOGGER
+// 📊 PERF LOGGER — rastreamento de latência e performance
+// Circular buffer por categoria, exposto em window.__perfLog
 // ──────────────────────────────────────────────────────────────
-class LatencyLogger {
-    #samples = new Map();
-    #log     = [];
+class PerfLogger {
+    static #CAP = 200; // máx entradas por categoria
+    static #SAMPLE_TTL = 30_000; // 30s sem confirmação → limpa sample
+
+    #samples = new Map();  // id → { sendMs, ttlTimer }
+    #buckets = new Map();  // categoria → Array (circular, máx #CAP)
+
+    constructor() {
+        window.__perfLog = {
+            summary: () => this.summary(),
+            report:  () => this.report(),
+            raw:     this.#buckets
+        };
+    }
 
     markSend(id) {
-        this.#samples.set(id, { sendMs: Date.now() });
+        const ttlTimer = setTimeout(() => this.#samples.delete(id), PerfLogger.#SAMPLE_TTL);
+        this.#samples.set(id, { sendMs: Date.now(), ttlTimer });
     }
 
     markRendered(id) {
         const s = this.#samples.get(id);
         if (!s) return;
-        const latency = Date.now() - s.sendMs;
-        this.#log.push({ id, latency, ts: new Date().toISOString() });
-        console.debug(`[Latency] ${id} → render em ${latency}ms`);
+        clearTimeout(s.ttlTimer);
+        this.#record('msg-render', Date.now() - s.sendMs);
         this.#samples.delete(id);
-        window.__chatLatency = this.#log;
-        if (this.#log.length % 10 === 0) this.#report();
     }
 
     markConfirmed(tempId, realId, latencyMs) {
-        console.debug(`[Latency] ${tempId} → Firestore confirmou (${realId}) em ${latencyMs}ms`);
+        this.#record('msg-firestore', latencyMs);
     }
 
-    #report() {
-        const last10 = this.#log.slice(-10);
-        const avg    = Math.round(last10.reduce((s, e) => s + e.latency, 0) / last10.length);
-        console.group('[ChatApp Latency] Últimas 10 mensagens');
-        console.table(last10);
-        console.info(`Média: ${avg}ms`);
+    recordCategory(cat, valueMs) {
+        this.#record(cat, valueMs);
+    }
+
+    #record(cat, valueMs) {
+        if (!this.#buckets.has(cat)) this.#buckets.set(cat, []);
+        const arr = this.#buckets.get(cat);
+        if (arr.length >= PerfLogger.#CAP) arr.shift(); // circular: remove o mais antigo
+        arr.push({ v: valueMs, ts: Date.now() });
+    }
+
+    summary() {
+        const result = {};
+        for (const [cat, arr] of this.#buckets) {
+            if (!arr.length) continue;
+            const avg = Math.round(arr.reduce((s, e) => s + e.v, 0) / arr.length);
+            const max = Math.max(...arr.map(e => e.v));
+            const min = Math.min(...arr.map(e => e.v));
+            result[cat] = { avg, min, max, count: arr.length };
+        }
+        return result;
+    }
+
+    report() {
+        const s = this.summary();
+        console.group('[PerfLogger] Resumo de performance');
+        console.table(s);
         console.groupEnd();
+        return s;
     }
 }
 
@@ -1420,7 +1533,78 @@ class PresenceManager {
 }
 
 // ──────────────────────────────────────────────────────────────
-// 💬 CHAT APP
+// � MESSAGE RATE LIMITER — token bucket (anti-flood)
+// 5 tokens; recarrega 1 a cada 500ms (≈ 2/s sustentado)
+// ──────────────────────────────────────────────────────────────
+class MessageRateLimiter {
+    static #CAPACITY    = 5;
+    static #REFILL_MS   = 500; // +1 token a cada 500ms
+
+    #tokens = MessageRateLimiter.#CAPACITY;
+    #timer  = null;
+
+    constructor() {
+        this.#timer = setInterval(() => {
+            if (this.#tokens < MessageRateLimiter.#CAPACITY) this.#tokens++;
+        }, MessageRateLimiter.#REFILL_MS);
+    }
+
+    /** Retorna true se pode enviar, false se throttled. */
+    consume() {
+        if (this.#tokens > 0) { this.#tokens--; return true; }
+        return false;
+    }
+
+    destroy() { clearInterval(this.#timer); }
+}
+
+// ──────────────────────────────────────────────────────────────
+// 🗄️ DECRYPT CACHE — LRU de 20 entradas para blobUrls decifrados
+// Evita re-fetch + re-decrypt ao reabrir o lightbox para a mesma mídia
+// ──────────────────────────────────────────────────────────────
+class DecryptCache {
+    static #CAP = 20;
+
+    #cache = new Map(); // url → { blobUrl, ts }
+
+    async getOrDecrypt(url, keyB64, ivB64) {
+        if (this.#cache.has(url)) {
+            const entry = this.#cache.get(url);
+            entry.ts = Date.now(); // atualiza timestamp (LRU touch)
+            return entry.blobUrl;
+        }
+        const blobUrl = await MediaUploader.decryptMedia(url, keyB64, ivB64);
+        this.#insert(url, blobUrl);
+        return blobUrl;
+    }
+
+    #insert(url, blobUrl) {
+        if (this.#cache.size >= DecryptCache.#CAP) {
+            // Evicta o menos recentemente usado
+            let lruKey = null;
+            let lruTs  = Infinity;
+            for (const [k, v] of this.#cache) {
+                if (v.ts < lruTs) { lruTs = v.ts; lruKey = k; }
+            }
+            if (lruKey) {
+                URL.revokeObjectURL(this.#cache.get(lruKey).blobUrl);
+                this.#cache.delete(lruKey);
+            }
+        }
+        this.#cache.set(url, { blobUrl, ts: Date.now() });
+    }
+
+    clear() {
+        this.#cache.forEach(v => URL.revokeObjectURL(v.blobUrl));
+        this.#cache.clear();
+    }
+}
+
+// Instância singleton do cache de descriptografia (compartilhada entre FileMessageRenderer e ChatApp)
+const _decryptCache = new DecryptCache();
+
+// ──────────────────────────────────────────────────────────────
+// �💬 CHAT APP
 // ──────────────────────────────────────────────────────────────
 class ChatApp {
     // Firebase
@@ -1499,13 +1683,25 @@ class ChatApp {
     #pendingNavigation = null; // navegação pendente ao abrir app via clique de notificação
 
     // Serviços
-    #latency  = new LatencyLogger();
+    #latency  = new PerfLogger();
     #offlineQ = new OfflineQueue();
     #connMon  = null;
     #typing   = null;
     #presence = null;
+    #rateLimiter = new MessageRateLimiter();
 
-    static #STUN  = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+    // Índice secundário tempId → entry (O(1) lookup no snapshot handler)
+    #pendingByTempId = new Map();
+
+    // rAF de scroll pendente
+    #_scrollRafId = null;
+
+    static #STUN  = { iceServers: [
+        { urls: 'stun:stun.l.google.com:19302'  },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' }
+    ]};
     static #PAGE  = 50;
 
     constructor() {
@@ -1538,9 +1734,13 @@ class ChatApp {
     #syncHeaderHeight() {
         const header = document.querySelector('.header');
         if (!header) return;
+        let debounce = null;
         const update = () => document.documentElement.style.setProperty('--header-height', header.offsetHeight + 'px');
         update();
-        new ResizeObserver(update).observe(header);
+        new ResizeObserver(() => {
+            clearTimeout(debounce);
+            debounce = setTimeout(update, 50);
+        }).observe(header);
     }
 
     #esc(str) {
@@ -1549,7 +1749,14 @@ class ChatApp {
             .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
 
-    #scrollBottom(el) { if (el) el.scrollTop = el.scrollHeight; }
+    #scrollBottom(el) {
+        if (!el) return;
+        // Só rola se o usuário já estava perto do fundo (não interrompe leitura de msgs antigas)
+        const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        if (!nearBottom) return;
+        cancelAnimationFrame(this.#_scrollRafId);
+        this.#_scrollRafId = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+    }
 
     #showError(msg) {
         const el = document.getElementById('chatAuthError');
@@ -1840,27 +2047,32 @@ class ChatApp {
         const msgs = document.getElementById('chatGroupMessages');
         let first  = true;
         this.#unsubGrpMsgs = onSnapshot(q, snap => {
-            snap.docChanges().forEach(c => {
+            const frag = document.createDocumentFragment();
+            const changes = snap.docChanges();
+            let hasNew = false;
+
+            changes.forEach(c => {
                 if (c.type === 'added') {
                     if (this.#confirmedIds.has(c.doc.id)) return;
                     const notify = !first;
                     this.#decryptMsg(c.doc.data(), 'group').then(data => {
-                        const entry = [...this.#pendingMessages.values()].find(
-                            p => !p.resolved && p.tempId === data.tempId
-                        );
-                        if (entry) {
+                        const entry = this.#pendingByTempId.get(data.tempId);
+                        if (entry && !entry.resolved) {
                             this.#confirmPendingMessage(entry.tempId, c.doc.id);
                             entry.resolved = true;
                         } else {
                             this.#renderMsg(msgs, c.doc.id, data, notify, 'group');
                         }
+                        this.#pruneConfirmedIds();
                     });
                     if (!this.#grpOldestDoc) this.#grpOldestDoc = c.doc;
+                    hasNew = true;
                 }
                 if (c.type === 'removed') document.getElementById('msg-' + c.doc.id)?.remove();
             });
+
             if (first) { first = false; this.#renderLoadMoreBtn(msgs, 'group'); }
-            this.#scrollBottom(msgs);
+            if (hasNew) this.#scrollBottom(msgs);
         }, e => console.error('[Chat] Erro no listener de grupo:', e.message));
     }
 
@@ -1869,6 +2081,11 @@ class ChatApp {
         const text  = input?.value.trim();
         if (!text || !this.#currentUser) return;
         if (text.length > 2000) { alert('Mensagem muito longa. Máximo 2000 caracteres.'); return; }
+        if (!this.#rateLimiter.consume()) {
+            input.disabled = true;
+            setTimeout(() => { input.disabled = false; input.focus(); }, 1000);
+            return;
+        }
 
         input.value = ''; input.style.height = 'auto';
         document.getElementById('micWrapGroup')?.classList.remove('mic-wrap--hidden');
@@ -1891,7 +2108,9 @@ class ChatApp {
         this.#latency.markSend(tempId);
         this.#renderOptimisticMsg(msgs, tempId, msgData);
         this.#latency.markRendered(tempId);
-        this.#pendingMessages.set(tempId, { tempId, text, uid: this.#currentUser.uid, colPath: 'messages', resolved: false });
+        const entry = { tempId, text, uid: this.#currentUser.uid, colPath: 'messages', resolved: false };
+        this.#pendingMessages.set(tempId, entry);
+        this.#pendingByTempId.set(tempId, entry);
 
         if (!this.#connMon.isOnline) {
             await this.#offlineQ.push({ tempId, colPath: 'messages', msgData: { uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL, text: enc ? null : text, enc, tempId } });
@@ -1923,6 +2142,7 @@ class ChatApp {
         const msgs    = document.getElementById('chatPrivateMessages');
         let first     = true;
         this.#unsubPrivMsgs = onSnapshot(q, snap => {
+            let hasNew = false;
             snap.docChanges().forEach(c => {
                 if (c.type === 'added') {
                     const fid     = 'priv-' + c.doc.id;
@@ -1938,22 +2158,23 @@ class ChatApp {
                     }
                     const notify = !first;
                     this.#decryptMsg(rawData, 'private').then(data => {
-                        const entry = [...this.#pendingMessages.values()].find(
-                            p => !p.resolved && p.tempId === data.tempId
-                        );
-                        if (entry) {
+                        const entry = this.#pendingByTempId.get(data.tempId);
+                        if (entry && !entry.resolved) {
                             this.#confirmPendingMessage(entry.tempId, fid);
                             entry.resolved = true;
                         } else {
                             this.#renderMsg(msgs, fid, data, notify, 'private');
                         }
+                        this.#pruneConfirmedIds();
+                        this.#pruneP2PReceivedIds();
                     });
                     if (!this.#privOldestDoc) this.#privOldestDoc = c.doc;
+                    hasNew = true;
                 }
                 if (c.type === 'removed') document.getElementById('msg-priv-' + c.doc.id)?.remove();
             });
             if (first) { first = false; this.#renderLoadMoreBtn(msgs, 'private'); }
-            this.#scrollBottom(msgs);
+            if (hasNew) this.#scrollBottom(msgs);
         }, e => console.error('[Chat] Erro no listener privado:', e.message));
     }
 
@@ -1963,6 +2184,11 @@ class ChatApp {
         const text  = input?.value.trim();
         if (!text) return;
         if (text.length > 2000) { alert('Mensagem muito longa. Máximo 2000 caracteres.'); return; }
+        if (!this.#rateLimiter.consume()) {
+            input.disabled = true;
+            setTimeout(() => { input.disabled = false; input.focus(); }, 1000);
+            return;
+        }
 
         input.value = ''; input.style.height = 'auto';
         document.getElementById('micWrapPrivate')?.classList.remove('mic-wrap--hidden');
@@ -1988,7 +2214,9 @@ class ChatApp {
         this.#latency.markSend(tempId);
         this.#renderOptimisticMsg(msgs, tempId, msgData);
         this.#latency.markRendered(tempId);
-        this.#pendingMessages.set(tempId, { tempId, text, uid: this.#currentUser.uid, colPath, resolved: false });
+        const privEntry = { tempId, text, uid: this.#currentUser.uid, colPath, resolved: false };
+        this.#pendingMessages.set(tempId, privEntry);
+        this.#pendingByTempId.set(tempId, privEntry);
 
         if (!this.#connMon.isOnline) {
             await this.#offlineQ.push({ tempId, colPath, msgData: { uid: msgData.uid, name: msgData.name, photoURL: msgData.photoURL, text: enc ? null : text, enc, tempId, receiverUid: msgData.receiverUid } });
@@ -2044,6 +2272,22 @@ class ChatApp {
             this.#markMsgStatus(realId, 'sent');
         }
         this.#pendingMessages.delete(tempId);
+        this.#pendingByTempId.delete(tempId);
+    }
+
+    // Mantém confirmedIds abaixo de 500 entradas (evita crescimento ilimitado)
+    #pruneConfirmedIds() {
+        if (this.#confirmedIds.size <= 500) return;
+        const arr     = [...this.#confirmedIds];
+        const pruned  = new Set(arr.slice(arr.length - 300));
+        this.#confirmedIds = pruned;
+    }
+
+    // Mantém p2pReceivedIds abaixo de 200 entradas
+    #pruneP2PReceivedIds() {
+        if (this.#p2pReceivedIds.size <= 200) return;
+        const arr = [...this.#p2pReceivedIds];
+        this.#p2pReceivedIds = new Set(arr.slice(arr.length - 100));
     }
 
     #markMsgStatus(id, status) {
@@ -2091,19 +2335,24 @@ class ChatApp {
     async #drainOfflineQueue() {
         const queue = await this.#offlineQ.getAll();
         if (!queue.length) return;
-        console.info(`[OfflineQueue] Reenviando ${queue.length} mensagem(s)...`);
-        for (const item of queue) {
-            try {
-                const docRef  = await addDoc(collection(this.#db, item.colPath), { ...item.msgData, createdAt: serverTimestamp() });
-                const isPriv  = item.colPath.startsWith('privateChats/');
-                const fid     = isPriv ? 'priv-' + docRef.id : docRef.id;
-                this.#confirmedIds.add(fid);
-                const el = document.getElementById('msg-' + item.tempId);
-                if (el) { el.id = 'msg-' + fid; this.#markMsgStatus(fid, 'sent'); }
-                await this.#offlineQ.remove(item.tempId);
-                console.info(`[OfflineQueue] ${item.tempId} → enviada`);
-            } catch (e) { console.warn(`[OfflineQueue] Falha ${item.tempId}:`, e.message); }
+        console.info(`[OfflineQueue] Reenviando ${queue.length} mensagem(s) em lotes de 5...`);
+        const BATCH = 5;
+        for (let i = 0; i < queue.length; i += BATCH) {
+            await Promise.all(queue.slice(i, i + BATCH).map(item => this.#drainItem(item)));
+            if (i + BATCH < queue.length) await new Promise(r => setTimeout(r, 200));
         }
+    }
+
+    async #drainItem(item) {
+        try {
+            const docRef  = await addDoc(collection(this.#db, item.colPath), { ...item.msgData, createdAt: serverTimestamp() });
+            const isPriv  = item.colPath.startsWith('privateChats/');
+            const fid     = isPriv ? 'priv-' + docRef.id : docRef.id;
+            this.#confirmedIds.add(fid);
+            const el = document.getElementById('msg-' + item.tempId);
+            if (el) { el.id = 'msg-' + fid; this.#markMsgStatus(fid, 'sent'); }
+            await this.#offlineQ.remove(item.tempId);
+        } catch (e) { console.warn(`[OfflineQueue] Falha ${item.tempId}:`, e.message); }
     }
 
     // ── Load More (paginação) ─────────────────────────────
@@ -3204,10 +3453,12 @@ class ChatApp {
         this.#pendingBlobUrls.forEach(u => URL.revokeObjectURL(u));
         this.#pendingBlobUrls = [];
         this.#mediaUploader = null;
+        _decryptCache.clear();
         this.#chatInitialized = false;
         this.#userCardMap.clear();
         this.#userDataMap.clear();
         this.#pendingMessages.clear();
+        this.#pendingByTempId.clear();
         this.#confirmedIds.clear();
         if (this.#isRecording) this.#stopVoiceRecord();
         this.#endCall().catch(() => {});

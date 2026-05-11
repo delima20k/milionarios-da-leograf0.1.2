@@ -72,7 +72,7 @@ _fcmMessaging.onBackgroundMessage(payload => {
 });
 // ─────────────────────────────────────────────────────────────────
 
-const STATIC_CACHE  = 'milionarios-static-v5.3';
+const STATIC_CACHE  = 'milionarios-static-v5.4';
 const DYNAMIC_CACHE = 'milionarios-dynamic-v5.2';
 
 // Recursos essenciais para cache
@@ -164,34 +164,42 @@ self.addEventListener('fetch', event => {
 
   // Estratégia para recursos estáticos (Cache First)
   // Compara pelo pathname final para evitar falsos positivos em outras origens
+  const isJsOrCss = /\.(js|css)(\?.*)?$/.test(requestUrl.pathname);
   if (CORE_ASSETS.some(asset => requestUrl.pathname.endsWith(asset.replace('./', '')))) {
-    event.respondWith(
-      caches.match(event.request)
-        .then(cachedResponse => {
-          if (cachedResponse) {
-            console.log('[SW] Servindo do cache:', event.request.url);
-            return cachedResponse;
-          }
-          
-          // Se não estiver no cache, busca da rede e cacheia
-          // Só cacheia respostas completas (status 200); 206 Partial Content causa erro
-          return fetch(event.request)
-            .then(response => {
-              if (response.status === 200) {
-                const responseClone = response.clone();
-                caches.open(STATIC_CACHE)
-                  .then(cache => cache.put(event.request, responseClone));
-              }
-              return response;
-            });
+    // JS/CSS: stale-while-revalidate — serve cache imediatamente e atualiza em background
+    if (isJsOrCss) {
+      event.respondWith(
+        caches.open(STATIC_CACHE).then(async cache => {
+          const cached = await cache.match(event.request);
+          const networkFetch = fetch(event.request).then(response => {
+            if (response.status === 200) cache.put(event.request, response.clone());
+            return response;
+          }).catch(() => null);
+          return cached || networkFetch;
         })
-        .catch(() => {
-          // Fallback para página offline se disponível
-          if (event.request.destination === 'document') {
-            return caches.match('./index.html');
-          }
-        })
-    );
+      );
+    } else {
+      event.respondWith(
+        caches.match(event.request)
+          .then(cachedResponse => {
+            if (cachedResponse) return cachedResponse;
+            return fetch(event.request)
+              .then(response => {
+                if (response.status === 200) {
+                  const responseClone = response.clone();
+                  caches.open(STATIC_CACHE)
+                    .then(cache => cache.put(event.request, responseClone));
+                }
+                return response;
+              });
+          })
+          .catch(() => {
+            if (event.request.destination === 'document') {
+              return caches.match('./index.html');
+            }
+          })
+      );
+    }
   }
   
   // Estratégia para chamadas da API (Network First com cache de backup)
