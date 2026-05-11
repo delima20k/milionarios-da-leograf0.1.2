@@ -41,11 +41,25 @@ const JOGOS_BOLAO = [
 // ── Helpers ──────────────────────────────────────────────────
 
 async function buscarResultado() {
-    const res = await fetch(API_URL, {
-        headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' }
-    });
-    if (!res.ok) throw new Error(`API retornou ${res.status}`);
-    return res.json();
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10_000);
+    try {
+        const res = await fetch(API_URL, {
+            signal: ctrl.signal,
+            headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' }
+        });
+        if (!res.ok) throw new Error(`API retornou ${res.status}`);
+        return res.json();
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+// Extrai o texto exibido na notificação conforme o tipo da mensagem.
+function _resolveTextoPush(data) {
+    if (data.type === 'audio') return '🎤 Áudio';
+    if (data.type === 'image') return '📷 Imagem';
+    return data.text || '';
 }
 
 // Compara os 13 jogos do bolão contra as dezenas sorteadas.
@@ -105,42 +119,38 @@ async function enviarParaTodos({ titulo, corpo, concurso, maxPontos }) {
     logger.info(`[Lotofácil] Enviando push para ${tokens.length} token(s) — concurso ${concurso}`);
 
     await _sendMulticast(tokens, {
+        // top-level notification: garantia máxima de entrega
+        notification: { title: titulo, body: corpo },
         data: {
             chatType:  'lotofacil',
             concurso:  String(concurso),
             maxPontos: String(maxPontos),
-            link:      APP_URL,
-            title:     titulo,
-            body:      corpo
+            link:      APP_URL
         },
         webpush: {
             headers: { Urgency: 'high' },
             notification: {
-                title:    titulo,
-                body:     corpo,
                 icon:     APP_URL + 'icon-192.png',
                 badge:    APP_URL + 'icon-192.png',
                 tag:      'lotofacil-resultado',
                 renotify: true,
                 vibrate:  [300, 100, 300, 100, 600],
-                requireInteraction: false,
-                // data é preservado no notificationclick do SW para roteamento
-                data: { url: APP_URL, chatType: 'lotofacil', concurso: String(concurso) }
+                requireInteraction: false
             },
             fcmOptions: { link: APP_URL }
         },
         android: {
             priority: 'high',
-            notification: { title: titulo, body: corpo, channelId: 'lotofacil', sound: 'default', defaultVibrateTimings: true }
+            notification: { channelId: 'lotofacil', sound: 'default', defaultVibrateTimings: true }
         },
-        apns: { payload: { aps: { sound: 'default', badge: 1, alert: { title: titulo, body: corpo } } } }
+        apns: { payload: { aps: { sound: 'default', badge: 1 } } }
     }, 'Lotofácil Push');
 }
 
 // ── Scheduler principal — 21h40 BRT ──────────────────────────
 exports.checkLotofacilResult = onSchedule(
     { schedule: '40 21 * * *', timeZone: 'America/Sao_Paulo', retryCount: 2 },
-    async () => { await _verificarEEnviar(); }
+    async () => { await _verificarEEnviar(false); }
 );
 
 // ── [TEMPORÁRIO] Endpoint HTTP para testar notificação manualmente ───────────
@@ -149,7 +159,7 @@ exports.testarNotificacaoLotofacil = onRequest(
     { region: 'us-central1' },
     async (req, res) => {
         try {
-            await _verificarEEnviarForcado();
+            await _verificarEEnviar(true);
             res.json({ ok: true, mensagem: 'Notificação enviada com sucesso!' });
         } catch (e) {
             logger.error('[Teste] Erro ao enviar notificação:', e);
@@ -161,15 +171,12 @@ exports.testarNotificacaoLotofacil = onRequest(
 // ── Backup — 23h00 BRT (caso API demore) ─────────────────────
 exports.checkLotofacilResultBackup = onSchedule(
     { schedule: '0 23 * * *', timeZone: 'America/Sao_Paulo', retryCount: 1 },
-    async () => { await _verificarEEnviar(); }
+    async () => { await _verificarEEnviar(false); }
 );
 
-// Versão forçada — ignora deduplicação, usada apenas pelo endpoint de teste.
-async function _verificarEEnviarForcado() {
-    const resultado   = await buscarResultado();
-    const notificacao = montarNotificacao(resultado);
-    await enviarParaTodos(notificacao);
-    await db.doc(STATE_DOC).set({
+// Persiste estado do último concurso notificado no Firestore.
+function _persistirEstado(notificacao) {
+    return db.doc(STATE_DOC).set({
         concurso:       notificacao.concurso,
         titulo:         notificacao.titulo,
         corpo:          notificacao.corpo,
@@ -178,33 +185,24 @@ async function _verificarEEnviarForcado() {
         jogosPremiados: notificacao.jogosPremiados,
         notificadoEm:   FieldValue.serverTimestamp()
     });
-    logger.info(`[Teste] Notificação enviada — concurso ${notificacao.concurso}`);
 }
 
-async function _verificarEEnviar() {
+// Verifica resultado e envia push. Se force=true, ignora deduplicação (uso em testes).
+async function _verificarEEnviar(force = false) {
     const resultado = await buscarResultado();
     const concurso  = resultado.numero;
 
-    // Deduplicação: ignora se este concurso já foi notificado
-    const stateDoc = await db.doc(STATE_DOC).get();
-    if (stateDoc.exists && stateDoc.data().concurso === concurso) {
-        logger.info(`Concurso ${concurso} já notificado — pulando.`);
-        return;
+    if (!force) {
+        const stateDoc = await db.doc(STATE_DOC).get();
+        if (stateDoc.exists && stateDoc.data().concurso === concurso) {
+            logger.info(`Concurso ${concurso} já notificado — pulando.`);
+            return;
+        }
     }
 
     const notificacao = montarNotificacao(resultado);
     await enviarParaTodos(notificacao);
-
-    // Persiste estado + dados do bolão para uso pelo front ao abrir pelo push
-    await db.doc(STATE_DOC).set({
-        concurso,
-        titulo:         notificacao.titulo,
-        corpo:          notificacao.corpo,
-        dezenas:        notificacao.dezenas,
-        maxPontos:      notificacao.maxPontos,
-        jogosPremiados: notificacao.jogosPremiados,
-        notificadoEm:   FieldValue.serverTimestamp()
-    });
+    await _persistirEstado(notificacao);
     logger.info(`✅ Notificação enviada — concurso ${concurso} (maxPontos=${notificacao.maxPontos})`);
 }
 
@@ -222,6 +220,7 @@ async function _sendMulticast(tokens, message, logTag) {
         res.responses.forEach((r, i) => {
             if (!r.success) {
                 const code = r.error?.code || '';
+                logger.warn(`[${logTag}] token[${i}] falhou — código: ${code} — msg: ${r.error?.message || ''}`);
                 if (code.includes('registration-token-not-registered') ||
                     code.includes('invalid-registration-token')) {
                     batch.delete(db.collection('fcmTokens').doc(lote[i]));
@@ -239,29 +238,26 @@ async function _sendChatPush(tokens, title, body, chatType, senderId, senderName
         ? 'chat-privado-' + (senderId || 'unknown')
         : 'chat-grupo';
     await _sendMulticast(tokens, {
-        // data: campos extras para roteamento no foreground (onMessage no chat.js)
-        data: { chatType, senderId: senderId || '', senderName: senderName || '', link: APP_URL, title, body },
+        // top-level notification: garantia máxima de entrega em todos os browsers/Android
+        notification: { title, body },
+        // top-level data: disponível no onMessage (foreground) e notificationclick (SW)
+        data: { chatType, senderId: senderId || '', senderName: senderName || '', link: APP_URL },
         webpush: {
             headers: { Urgency: 'high' },
-            // webpush.notification garante entrega no browser mesmo com app fechado.
-            // O SW (onBackgroundMessage) só é acionado em mensagens data-only;
-            // mas data-only não é confiável em todos os browsers Android.
-            // Aqui usamos notification para máxima confiabilidade de entrega.
             notification: {
-                title, body,
+                // Sobrescreve icon/badge/tag/vibrate para web; NÃO colocar 'data' aqui
+                // (campo inválido no FCM Admin SDK — causa rejeição de toda a mensagem)
                 icon:     APP_URL + 'icon-192.png',
                 badge:    APP_URL + 'icon-192.png',
                 tag,
                 renotify: true,
                 vibrate:  [200, 100, 200, 100, 400],
-                requireInteraction: false,
-                // data é preservado no notificationclick do SW para roteamento
-                data: { url: APP_URL, chatType, senderId: senderId || '', senderName: senderName || '' }
+                requireInteraction: false
             },
             fcmOptions: { link: APP_URL }
         },
-        android: { priority: 'high', ttl: '60s', notification: { title, body, sound: 'default', channelId: 'chat-messages', defaultVibrateTimings: true } },
-        apns:    { payload: { aps: { sound: 'default', badge: 1, contentAvailable: true, alert: { title, body } } } }
+        android: { priority: 'high', ttl: '60s', notification: { sound: 'default', channelId: 'chat-messages', defaultVibrateTimings: true } },
+        apns:    { payload: { aps: { sound: 'default', badge: 1, contentAvailable: true } } }
     }, `Chat Push ${chatType}`);
 }
 
@@ -275,7 +271,7 @@ exports.onGroupMessage = onDocumentCreated(
 
         const senderUid  = data.uid  || '';
         const senderName = data.name || 'Alguém';
-        const text       = data.type === 'audio' ? '🎤 Áudio' : data.type === 'image' ? '📷 Imagem' : (data.text || '');
+        const text       = _resolveTextoPush(data);
 
         const snap   = await db.collection('fcmTokens').get();
         const tokens = snap.docs
@@ -303,7 +299,7 @@ exports.onPrivateMessage = onDocumentCreated(
         if (!receiverUid) return;
 
         const senderName = data.name || 'Alguém';
-        const text       = data.type === 'audio' ? '🎤 Áudio' : data.type === 'image' ? '📷 Imagem' : (data.text || '');
+        const text       = _resolveTextoPush(data);
 
         const snap   = await db.collection('fcmTokens').where('uid', '==', receiverUid).get();
         const tokens = snap.docs.map(d => d.id);

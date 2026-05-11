@@ -1256,8 +1256,9 @@ class ChatApp {
                 const data = payload.data || {};
                 // payload.notification só é populado se 'notification' estiver no nível raiz do FCM.
                 // Com webpush.notification, usa data.title/data.body como fonte principal.
-                const title   = data.title || n.title || '🎱 Milionários da Leograf';
-                const body    = data.body  || n.body  || '';
+                // n.title/n.body populados quando notification está no nível raiz do FCM (foreground)
+                const title   = n.title || data.title || '🎱 Milionários da Leograf';
+                const body    = n.body  || data.body  || '';
                 const tag     = data.chatType === 'grupo'
                     ? 'chat-grupo'
                     : data.chatType === 'privado'

@@ -16,25 +16,30 @@ firebase.initializeApp({
 const _fcmMessaging = firebase.messaging();
 const _FCM_URL = 'https://delima20k.github.io/milionarios-da-leograf0.1.2/';
 
+function _fcmResolveTag(data) {
+    if (data.chatType === 'grupo')   return 'chat-grupo';
+    if (data.chatType === 'privado') return 'chat-privado-' + (data.senderId || 'unknown');
+    return 'lotofacil-resultado';
+}
+
+function _fcmResolveVibrate(data) {
+    return data.chatType ? [200, 100, 200, 100, 400] : [300, 100, 300, 100, 600];
+}
+
+// Fallback para pushes data-only ou tipos futuros sem webpush.notification.
+// Chat e Lotofácil usam webpush.notification → browser exibe automaticamente.
 _fcmMessaging.onBackgroundMessage(payload => {
-    // Chamado apenas para mensagens data-only (sem webpush.notification).
-    // Mensagens de chat e Lotofácil usam webpush.notification → browser exibe automaticamente.
-    // Este handler serve como fallback para outros tipos de push futuros.
     const n     = payload.notification || {};
     const data  = payload.data         || {};
     const title = n.title || data.title || '🎱 Milionários da Leograf';
     const body  = n.body  || data.body  || '';
-    let tag     = 'lotofacil-resultado';
-    let vibrate = [300, 100, 300, 100, 600];
-    if (data.chatType === 'grupo')   { tag = 'chat-grupo';                                   vibrate = [200, 100, 200, 100, 400]; }
-    if (data.chatType === 'privado') { tag = 'chat-privado-' + (data.senderId || 'unknown'); vibrate = [200, 100, 200, 100, 400]; }
     self.registration.showNotification(title, {
         body,
         icon:     _FCM_URL + 'icon-192.png',
         badge:    _FCM_URL + 'icon-192.png',
-        tag,
+        tag:      _fcmResolveTag(data),
         renotify: true,
-        vibrate,
+        vibrate:  _fcmResolveVibrate(data),
         data:     { url: data.link || _FCM_URL, chatType: data.chatType || '', senderId: data.senderId || '', senderName: data.senderName || '', concurso: data.concurso || '' }
     });
 });

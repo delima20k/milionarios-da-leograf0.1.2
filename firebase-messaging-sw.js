@@ -39,8 +39,6 @@ messaging.onBackgroundMessage(payload => {
     const tag   = resolveTag(data);
     const url   = data.link || APP_URL;
 
-    console.log('[FCM-SW] Background message recebida. tag:', tag, 'tipo:', data.chatType || 'lotofacil');
-
     self.registration.showNotification(title, {
         body,
         icon:      APP_URL + 'icon-192.png',
