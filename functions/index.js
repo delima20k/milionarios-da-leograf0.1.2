@@ -109,7 +109,9 @@ async function enviarParaTodos({ titulo, corpo, concurso, maxPontos }) {
             chatType:  'lotofacil',
             concurso:  String(concurso),
             maxPontos: String(maxPontos),
-            link:      APP_URL
+            link:      APP_URL,
+            title:     titulo,
+            body:      corpo
         },
         webpush: {
             headers: { Urgency: 'high' },
@@ -238,7 +240,7 @@ async function _sendChatPush(tokens, title, body, chatType, senderId, senderName
         : 'chat-grupo';
     await _sendMulticast(tokens, {
         // data: campos extras para roteamento no foreground (onMessage no chat.js)
-        data: { chatType, senderId: senderId || '', senderName: senderName || '', link: APP_URL },
+        data: { chatType, senderId: senderId || '', senderName: senderName || '', link: APP_URL, title, body },
         webpush: {
             headers: { Urgency: 'high' },
             // webpush.notification garante entrega no browser mesmo com app fechado.

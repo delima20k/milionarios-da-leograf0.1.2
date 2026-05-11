@@ -1254,16 +1254,22 @@ class ChatApp {
             onMessage(this.#messaging, payload => {
                 const n    = payload.notification || {};
                 const data = payload.data || {};
-                const tag  = data.chatType === 'grupo'
+                // payload.notification só é populado se 'notification' estiver no nível raiz do FCM.
+                // Com webpush.notification, usa data.title/data.body como fonte principal.
+                const title   = data.title || n.title || '🎱 Milionários da Leograf';
+                const body    = data.body  || n.body  || '';
+                const tag     = data.chatType === 'grupo'
                     ? 'chat-grupo'
                     : data.chatType === 'privado'
                         ? 'chat-privado-' + (data.senderId || '')
                         : 'lotofacil-resultado';
-                swReg.showNotification(n.title || '🎱 Milionários da Leograf', {
-                    body: n.body || '', icon: './icon-192.png', badge: './icon-192.png',
-                    tag, renotify: true,
-                    vibrate: data.chatType ? [200, 100, 200] : [300, 100, 300, 100, 600],
-                    data:    { chatType: data.chatType || '', senderId: data.senderId || '', senderName: data.senderName || '' }
+                const vibrate = data.chatType ? [200, 100, 200, 100, 400] : [300, 100, 300, 100, 600];
+                // Vibração direta — mais confiável em Android que a opção da notificação
+                if ('vibrate' in navigator) navigator.vibrate(vibrate);
+                swReg.showNotification(title, {
+                    body, icon: './icon-192.png', badge: './icon-192.png',
+                    tag, renotify: true, vibrate,
+                    data: { chatType: data.chatType || '', senderId: data.senderId || '', senderName: data.senderName || '', concurso: data.concurso || '' }
                 });
             });
         } catch (e) { console.warn('[FCM] Erro ao inicializar:', e.message); }
