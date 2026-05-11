@@ -26,16 +26,16 @@ function resolveTag(data) {
 }
 
 function resolveVibrate(data) {
-    if (data.chatType) return [200, 100, 200];
+    if (data.chatType) return [200, 100, 200, 100, 400];
     return [300, 100, 300, 100, 600];
 }
 
 // ── Mensagem em background (app fechado / aba inativa) ───────
 messaging.onBackgroundMessage(payload => {
-    const n    = payload.notification || {};
-    const data = payload.data         || {};
-    const title = n.title || '🎱 Milionários da Leograf';
-    const body  = n.body  || data.body || '';
+    const data  = payload.data || {};
+    // Mensagens data-only: título e corpo chegam em data.title / data.body
+    const title = data.title || '🎱 Milionários da Leograf';
+    const body  = data.body  || '';
     const tag   = resolveTag(data);
     const url   = data.link || APP_URL;
 
@@ -48,7 +48,7 @@ messaging.onBackgroundMessage(payload => {
         tag,
         renotify:  true,
         vibrate:   resolveVibrate(data),
-        data:      { url }
+        data:      { url, chatType: data.chatType || '', senderId: data.senderId || '', senderName: data.senderName || '', concurso: data.concurso || '' }
     });
 });
 

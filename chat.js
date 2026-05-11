@@ -301,6 +301,8 @@ class ChatApp {
 
     // Timers
     #tokenRenewalTimer = null;
+    #currentFcmToken   = null;
+    #pendingNavigation = null; // navegação pendente ao abrir app via clique de notificação
 
     // Serviços
     #latency  = new LatencyLogger();
@@ -460,6 +462,13 @@ class ChatApp {
         this.#listenForIncomingCalls();
         // initFCM aqui garante que o token seja salvo com o uid correto do usuário
         this.#initFCM();
+        // Consome navegação pendente de clique em push (app estava fechado)
+        if (this.#pendingNavigation) {
+            const nav = this.#pendingNavigation;
+            this.#pendingNavigation = null;
+            // Delay para #subscribeUsers popular #userDataMap antes de navegar
+            setTimeout(() => this.#navigateToChat(nav.chatType, nav.senderId, nav.senderName), 800);
+        }
     }
 
     async #loginWithPassword() {
@@ -501,7 +510,7 @@ class ChatApp {
         catch (e) { this.#showError(this.#translateError(e)); }
     }
 
-    async #logout() { this.#presence.stop(); await signOut(this.#auth); }
+    async #logout() { this.#presence.stop(); await this.#deleteFCMToken(); await signOut(this.#auth); }
 
     // ── Avatar ────────────────────────────────────────────
     #updateAvatarUI(photoURL) {
@@ -1192,6 +1201,16 @@ class ChatApp {
         }
     }
 
+    // ── Navegação via push ─────────────────────────────────
+    // Roteamento após clique em push (grupo, privado; chamada foca sem navegar)
+    #navigateToChat(chatType, senderId, senderName) {
+        if (chatType === 'grupo')   { this.#openGroupChat(); return; }
+        if (chatType === 'privado') {
+            const peer = this.#userDataMap.get(senderId);
+            this.#openPrivateChat({ uid: senderId, name: peer?.name || senderName || 'Usuário', photoURL: peer?.photoURL || '' });
+        }
+    }
+
     // ── FCM ───────────────────────────────────────────────
     async #initFCM() {
         if (!('serviceWorker' in navigator) || !('Notification' in window)) return;
@@ -1219,6 +1238,7 @@ class ChatApp {
             }
             const token = await getToken(this.#messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
             if (token) {
+                this.#currentFcmToken = token;
                 await this.#saveFCMToken(token);
                 // Renova o token a cada 7 dias (SDK modular não tem onTokenRefresh).
                 // Armazena o ID para cancelar no logout e evitar leak.
@@ -1226,7 +1246,7 @@ class ChatApp {
                 this.#tokenRenewalTimer = setInterval(async () => {
                     try {
                         const renewed = await getToken(this.#messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: swReg });
-                        if (renewed) await this.#saveFCMToken(renewed);
+                        if (renewed) { this.#currentFcmToken = renewed; await this.#saveFCMToken(renewed); }
                     } catch { /* silencioso */ }
                 }, 7 * 24 * 60 * 60 * 1000);
             }
@@ -1241,16 +1261,33 @@ class ChatApp {
                         : 'lotofacil-resultado';
                 swReg.showNotification(n.title || '🎱 Milionários da Leograf', {
                     body: n.body || '', icon: './icon-192.png', badge: './icon-192.png',
-                    tag, renotify: true
+                    tag, renotify: true,
+                    vibrate: data.chatType ? [200, 100, 200] : [300, 100, 300, 100, 600],
+                    data:    { chatType: data.chatType || '', senderId: data.senderId || '', senderName: data.senderName || '' }
                 });
             });
         } catch (e) { console.warn('[FCM] Erro ao inicializar:', e.message); }
     }
 
     async #saveFCMToken(token) {
+        let deviceId = localStorage.getItem('fcm-device-id');
+        if (!deviceId) {
+            deviceId = crypto.randomUUID();
+            localStorage.setItem('fcm-device-id', deviceId);
+        }
         await setDoc(doc(this.#db, 'fcmTokens', token), {
-            uid: this.#currentUser?.uid || null, updatedAt: serverTimestamp()
+            uid: this.#currentUser?.uid || null, updatedAt: serverTimestamp(),
+            deviceId, userAgent: navigator.userAgent
         });
+    }
+
+    async #deleteFCMToken() {
+        if (!this.#messaging || !this.#currentFcmToken) return;
+        try {
+            await deleteToken(this.#messaging);
+            await deleteDoc(doc(this.#db, 'fcmTokens', this.#currentFcmToken));
+        } catch { /* token pode já ter expirado */ }
+        this.#currentFcmToken = null;
     }
 
     // ── Voz ───────────────────────────────────────────────
@@ -1619,18 +1656,38 @@ class ChatApp {
         document.getElementById('btnOnlineList')?.addEventListener('click', () =>
             document.getElementById('chatOnlinePanel')?.classList.toggle('chat-online-panel--hidden')
         );
+
+        // Roteamento após clique em notificação push
+        window.addEventListener('navigate-to-chat', e => {
+            const { chatType, senderId, senderName } = e.detail || {};
+            if (!chatType) return;
+            if (!this.#currentUser) {
+                // App ainda inicializando (aberto via clique de push) — adiar até #enterChat
+                this.#pendingNavigation = { chatType, senderId, senderName };
+                return;
+            }
+            this.#navigateToChat(chatType, senderId, senderName);
+        });
     }
 }
 
 document.addEventListener('DOMContentLoaded', () => { new ChatApp(); });
 
-// Listener para Background Sync do service worker
+// Listener para mensagens do service worker (Background Sync + FCM Navigate)
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', e => {
         if (e.data?.type === 'DRAIN_QUEUE') {
             // O app recarrega a fila via ConnectionMonitor.onOnline; 
             // aqui disparamos via evento customizado caso necessário
             window.dispatchEvent(new Event('online'));
+        }
+        if (e.data?.type === 'NAVIGATE_TO_CHAT') {
+            window.dispatchEvent(new CustomEvent('navigate-to-chat', { detail: e.data }));
+        }
+        if (e.data?.type === 'NAVIGATE_TO_LOTOFACIL') {
+            window.dispatchEvent(new CustomEvent('navigate-to-lotofacil', {
+                detail: { concurso: e.data.concurso }
+            }));
         }
     });
 }

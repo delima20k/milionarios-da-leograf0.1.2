@@ -17,14 +17,14 @@ const _fcmMessaging = firebase.messaging();
 const _FCM_URL = 'https://delima20k.github.io/milionarios-da-leograf0.1.2/';
 
 _fcmMessaging.onBackgroundMessage(payload => {
-    const n     = payload.notification || {};
-    const data  = payload.data         || {};
-    const title = n.title || '🎱 Milionários da Leograf';
-    const body  = n.body  || data.body || '';
+    const data  = payload.data || {};
+    // Mensagens data-only: título e corpo chegam em data.title / data.body
+    const title = data.title || '🎱 Milionários da Leograf';
+    const body  = data.body  || '';
     let tag     = 'lotofacil-resultado';
     let vibrate = [300, 100, 300, 100, 600];
-    if (data.chatType === 'grupo')   { tag = 'chat-grupo';                                   vibrate = [200, 100, 200]; }
-    if (data.chatType === 'privado') { tag = 'chat-privado-' + (data.senderId || 'unknown'); vibrate = [200, 100, 200]; }
+    if (data.chatType === 'grupo')   { tag = 'chat-grupo';                                   vibrate = [200, 100, 200, 100, 400]; }
+    if (data.chatType === 'privado') { tag = 'chat-privado-' + (data.senderId || 'unknown'); vibrate = [200, 100, 200, 100, 400]; }
     self.registration.showNotification(title, {
         body,
         icon:     _FCM_URL + 'icon-192.png',
@@ -32,13 +32,13 @@ _fcmMessaging.onBackgroundMessage(payload => {
         tag,
         renotify: true,
         vibrate,
-        data:     { url: data.link || _FCM_URL }
+        data:     { url: data.link || _FCM_URL, chatType: data.chatType || '', senderId: data.senderId || '', senderName: data.senderName || '', concurso: data.concurso || '' }
     });
 });
 // ─────────────────────────────────────────────────────────────────
 
-const STATIC_CACHE  = 'milionarios-static-v4.9';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v4.9';
+const STATIC_CACHE  = 'milionarios-static-v5.1';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v5.1';
 
 // Recursos essenciais para cache
 // Áudios (.mp3) removidos do cache: Range Requests (HTTP 206) são incompatíveis com cache.put()
@@ -216,21 +216,38 @@ async function doBackgroundSync() {
   }
 }
 
-// Clique em notificações — foca janela existente ou abre nova
+// Clique em notificações — foca janela existente ou abre nova, depois roteia
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const target = event.notification.data?.url || _FCM_URL;
+  const notifData  = event.notification.data || {};
+  const target     = notifData.url       || _FCM_URL;
+  const chatType   = notifData.chatType  || '';
+  const senderId   = notifData.senderId  || '';
+  const senderName = notifData.senderName || '';
+  const concurso   = notifData.concurso  || '';
+
+  // Monta a mensagem de navegação conforme o tipo da notificação
+  let navMsg = null;
+  if (chatType === 'lotofacil') {
+    navMsg = { type: 'NAVIGATE_TO_LOTOFACIL', concurso };
+  } else if (chatType) {
+    navMsg = { type: 'NAVIGATE_TO_CHAT', chatType, senderId, senderName };
+  }
+
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
-      for (const c of list) {
-        if (c.url.startsWith(_FCM_URL) && 'focus' in c) return c.focus();
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async list => {
+      let client = list.find(c => c.url.startsWith(_FCM_URL) && 'focus' in c);
+      if (client) {
+        await client.focus();
+      } else {
+        client = await clients.openWindow(target);
       }
-      return clients.openWindow(target);
+      if (navMsg && client) client.postMessage(navMsg);
     })
   );
 });
 
 // Log de informações do SW
 console.log('[SW] Service Worker Milionários da Leograf carregado!');
-console.log('[SW] Versão:', CACHE_NAME);
+console.log('[SW] Versão:', STATIC_CACHE);
 console.log('[SW] Recursos principais:', CORE_ASSETS);

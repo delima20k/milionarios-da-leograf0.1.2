@@ -2492,3 +2492,16 @@ const JogoPaciencia = {
 document.addEventListener('DOMContentLoaded', () => {
     JogoPaciencia.init();
 });
+
+// ── Navegação automática via push de Lotofácil ───────────────────────────────
+// Disparado pelo SW quando usuário clica numa push de resultado da Lotofácil.
+// Reutiliza o fluxo normal: verificarConcursoTeimosinha → modal → resultado.
+window.addEventListener('navigate-to-lotofacil', e => {
+    const concurso = Number(e.detail?.concurso);
+    if (!concurso) return;
+    const teimosinha = teimosinhaConcursos.find(t => t.concurso === concurso);
+    if (!teimosinha) return;
+    verificarConcursoTeimosinha(teimosinha);
+    document.getElementById('botoesTeimosinha')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
