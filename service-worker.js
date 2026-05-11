@@ -17,10 +17,13 @@ const _fcmMessaging = firebase.messaging();
 const _FCM_URL = 'https://delima20k.github.io/milionarios-da-leograf0.1.2/';
 
 _fcmMessaging.onBackgroundMessage(payload => {
-    const data  = payload.data || {};
-    // Mensagens data-only: título e corpo chegam em data.title / data.body
-    const title = data.title || '🎱 Milionários da Leograf';
-    const body  = data.body  || '';
+    // Chamado apenas para mensagens data-only (sem webpush.notification).
+    // Mensagens de chat e Lotofácil usam webpush.notification → browser exibe automaticamente.
+    // Este handler serve como fallback para outros tipos de push futuros.
+    const n     = payload.notification || {};
+    const data  = payload.data         || {};
+    const title = n.title || data.title || '🎱 Milionários da Leograf';
+    const body  = n.body  || data.body  || '';
     let tag     = 'lotofacil-resultado';
     let vibrate = [300, 100, 300, 100, 600];
     if (data.chatType === 'grupo')   { tag = 'chat-grupo';                                   vibrate = [200, 100, 200, 100, 400]; }

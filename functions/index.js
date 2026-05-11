@@ -105,19 +105,26 @@ async function enviarParaTodos({ titulo, corpo, concurso, maxPontos }) {
     logger.info(`[Lotofácil] Enviando push para ${tokens.length} token(s) — concurso ${concurso}`);
 
     await _sendMulticast(tokens, {
-        // Sem notification no nível raiz: onBackgroundMessage do SW é chamado
-        // → vibração, som e roteamento funcionam com app fechado
         data: {
             chatType:  'lotofacil',
             concurso:  String(concurso),
             maxPontos: String(maxPontos),
-            link:      APP_URL,
-            title:     titulo,
-            body:      corpo
+            link:      APP_URL
         },
         webpush: {
             headers: { Urgency: 'high' },
-            // Sem webpush.notification: SW controla exibição via onBackgroundMessage
+            notification: {
+                title:    titulo,
+                body:     corpo,
+                icon:     APP_URL + 'icon-192.png',
+                badge:    APP_URL + 'icon-192.png',
+                tag:      'lotofacil-resultado',
+                renotify: true,
+                vibrate:  [300, 100, 300, 100, 600],
+                requireInteraction: false,
+                // data é preservado no notificationclick do SW para roteamento
+                data: { url: APP_URL, chatType: 'lotofacil', concurso: String(concurso) }
+            },
             fcmOptions: { link: APP_URL }
         },
         android: {
@@ -226,13 +233,29 @@ async function _sendMulticast(tokens, message, logTag) {
 
 // Constrói e envia um push de mensagem de chat (grupo ou privado).
 async function _sendChatPush(tokens, title, body, chatType, senderId, senderName) {
+    const tag = chatType === 'privado'
+        ? 'chat-privado-' + (senderId || 'unknown')
+        : 'chat-grupo';
     await _sendMulticast(tokens, {
-        // Sem notification no nível raiz: onBackgroundMessage do SW é chamado
-        // → vibração, som e roteamento funcionam com app fechado
-        data: { chatType, senderId: senderId || '', senderName: senderName || '', link: APP_URL, title, body },
+        // data: campos extras para roteamento no foreground (onMessage no chat.js)
+        data: { chatType, senderId: senderId || '', senderName: senderName || '', link: APP_URL },
         webpush: {
             headers: { Urgency: 'high' },
-            // Sem webpush.notification: SW controla exibição via onBackgroundMessage
+            // webpush.notification garante entrega no browser mesmo com app fechado.
+            // O SW (onBackgroundMessage) só é acionado em mensagens data-only;
+            // mas data-only não é confiável em todos os browsers Android.
+            // Aqui usamos notification para máxima confiabilidade de entrega.
+            notification: {
+                title, body,
+                icon:     APP_URL + 'icon-192.png',
+                badge:    APP_URL + 'icon-192.png',
+                tag,
+                renotify: true,
+                vibrate:  [200, 100, 200, 100, 400],
+                requireInteraction: false,
+                // data é preservado no notificationclick do SW para roteamento
+                data: { url: APP_URL, chatType, senderId: senderId || '', senderName: senderName || '' }
+            },
             fcmOptions: { link: APP_URL }
         },
         android: { priority: 'high', ttl: '60s', notification: { title, body, sound: 'default', channelId: 'chat-messages', defaultVibrateTimings: true } },
@@ -271,9 +294,10 @@ exports.onPrivateMessage = onDocumentCreated(
         const data = event.data?.data();
         if (!data?.text && data?.type !== 'audio' && data?.type !== 'image') return;
 
-        const chatId      = event.params.chatId;
         const senderUid   = data.uid || '';
-        const receiverUid = chatId.split('_').find(u => u !== senderUid);
+        // Usa receiverUid gravado no documento — mais confiável que split do chatId
+        // (UIDs podem conter '_' em casos edge)
+        const receiverUid = data.receiverUid || event.params.chatId.split('_').find(u => u !== senderUid);
         if (!receiverUid) return;
 
         const senderName = data.name || 'Alguém';
