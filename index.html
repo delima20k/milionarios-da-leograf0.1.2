@@ -251,7 +251,10 @@
                     </div>
                     <div class="chat-messages" id="chatGroupMessages"></div>
                     <div class="chat-typing-bar" id="chatGroupTypingBar" aria-live="polite"></div>
+                    <div class="file-preview-bar file-preview-bar--hidden" id="filePreviewGroup" aria-label="Pré-visualização do arquivo"></div>
                     <div class="chat-input-area">
+                        <button class="btn-attach" id="btnAttachGroup" title="Enviar arquivo" aria-label="Anexar arquivo">📎</button>
+                        <button class="btn-emoji" id="btnEmojiGroup" title="Emoji / GIF" aria-label="Emoji e GIF">😊</button>
                         <textarea class="chat-textarea" id="chatGroupInput" placeholder="Mensagem para o grupo..." rows="1" maxlength="500"></textarea>
                         <div class="chat-btn-wrap">
                             <div class="mic-slider-wrap" id="micWrapGroup">
@@ -272,7 +275,10 @@
                     </div>
                     <div class="chat-messages" id="chatPrivateMessages"></div>
                     <div class="chat-typing-bar" id="chatPrivateTypingBar" aria-live="polite"></div>
+                    <div class="file-preview-bar file-preview-bar--hidden" id="filePreviewPrivate" aria-label="Pré-visualização do arquivo"></div>
                     <div class="chat-input-area">
+                        <button class="btn-attach" id="btnAttachPrivate" title="Enviar arquivo" aria-label="Anexar arquivo">📎</button>
+                        <button class="btn-emoji" id="btnEmojiPrivate" title="Emoji / GIF" aria-label="Emoji e GIF">😊</button>
                         <textarea class="chat-textarea" id="chatPrivateInput" placeholder="Mensagem privada..." rows="1" maxlength="500"></textarea>
                         <div class="chat-btn-wrap">
                             <div class="mic-slider-wrap" id="micWrapPrivate">
@@ -606,7 +612,9 @@
     </div>
 
     <script src="script.js"></script>
-    <script type="module" src="chat.js?v=11"></script>
+    <script type="module" src="chat.js?v=12"></script>
+    <!-- Input global de arquivo para o sistema de mídia -->
+    <input type="file" id="mediaFileInput" style="display:none" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar">
     <script>
         // Limpar SWs antigos com escopo errado e registrar o correto
         if ('serviceWorker' in navigator) {

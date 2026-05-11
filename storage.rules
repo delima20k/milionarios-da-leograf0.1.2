@@ -1,0 +1,28 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Avatares: leitura autenticada, escrita somente do próprio usuário
+    match /avatars/{uid} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Áudios de voz: leitura autenticada, escrita somente do remetente
+    match /voiceMessages/{uid}/{file} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Mídias cifradas E2E: leitura autenticada, escrita somente do remetente
+    match /media/{uid}/{file} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Thumbnails cifrados E2E
+    match /thumbnails/{uid}/{file} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

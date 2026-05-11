@@ -15,7 +15,7 @@ import {
     serverTimestamp, startAfter, getDocs
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import {
-    getStorage, ref, uploadBytes, getDownloadURL
+    getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js';
 import {
     getMessaging, getToken, onMessage, deleteToken
@@ -498,6 +498,691 @@ class P2PChannel {
     }
 }
 
+// ──────────────────────────────────────────────────────────────
+// 📤 MEDIA UPLOADER — compressão, E2E e upload com progresso
+// ──────────────────────────────────────────────────────────────
+// Comprime imagens via Canvas API (WebP), gera thumbnails para imagens e
+// vídeos, cifra o arquivo com AES-256-GCM antes do upload (E2E real) e
+// usa uploadBytesResumable para suportar pausa/retomada/cancelamento.
+class MediaUploader {
+    static #LIMITS  = { image: 20 * 1024 * 1024, video: 100 * 1024 * 1024, default: 50 * 1024 * 1024 };
+    static #RETRIES = 3;
+    static #MIME_MAP = {
+        'image/': 'image', 'video/': 'video', 'audio/': 'audio',
+        'application/pdf': 'pdf', 'image/gif': 'gif'
+    };
+
+    #storage;
+    #e2e;
+    #uid;
+    #activeTask = null; // UploadTask em andamento (pausa/cancelamento)
+
+    constructor(storage, e2e, uid) {
+        this.#storage = storage;
+        this.#e2e     = e2e;
+        this.#uid     = uid;
+    }
+
+    /** Retorna 'image'|'video'|'audio'|'pdf'|'document'|'gif' */
+    static resolveType(mime) {
+        if (mime === 'image/gif') return 'gif';
+        for (const [prefix, type] of Object.entries(MediaUploader.#MIME_MAP)) {
+            if (mime.startsWith(prefix)) return type;
+        }
+        return 'document';
+    }
+
+    /** Valida tamanho. Lança Error com mensagem amigável se inválido. */
+    static validate(file) {
+        const type  = MediaUploader.resolveType(file.type);
+        const limit = MediaUploader.#LIMITS[type] ?? MediaUploader.#LIMITS.default;
+        if (file.size > limit) throw new Error(`Arquivo muito grande. Limite: ${Math.round(limit / 1024 / 1024)}MB`);
+    }
+
+    /**
+     * Faz upload completo do arquivo.
+     * @param {File} file
+     * @param {(pct: number) => void} onProgress  — 0–100
+     * @returns {Promise<Object>} resultado com url, thumbnailUrl, tipo, chave E2E, etc.
+     */
+    async upload(file, onProgress = () => {}) {
+        MediaUploader.validate(file);
+        const type = MediaUploader.resolveType(file.type);
+
+        // 1. Compressão / thumbnail
+        let uploadFile   = file;
+        let thumbnailUrl = null;
+        if (type === 'image') {
+            uploadFile = await this.#compressImage(file);
+            const thumbBlob = await this.#generateImageThumbnail(file);
+            thumbnailUrl    = await this.#uploadRaw(thumbBlob, `thumbnails/${this.#uid}/${Date.now()}_thumb.webp`);
+        } else if (type === 'video') {
+            const thumbBlob = await this.#generateVideoThumbnail(file).catch(() => null);
+            if (thumbBlob) thumbnailUrl = await this.#uploadRaw(thumbBlob, `thumbnails/${this.#uid}/${Date.now()}_vthumb.webp`);
+        }
+
+        // 2. Cifrar
+        const arrayBuf = await uploadFile.arrayBuffer();
+        const { encrypted, keyB64, ivB64 } = await this.#encryptBuffer(arrayBuf);
+
+        // 3. Upload cifrado com progresso e retry
+        const ext      = uploadFile.name?.split('.').pop() || 'bin';
+        const path     = `media/${this.#uid}/${Date.now()}_${type}.${ext}`;
+        const encBlob  = new Blob([encrypted], { type: 'application/octet-stream' });
+        const url      = await this.#uploadWithRetry(encBlob, path, onProgress);
+
+        return {
+            url, thumbnailUrl,
+            type, fileName: file.name, fileSize: file.size, mimeType: file.type,
+            mediaKey: keyB64, mediaIv: ivB64
+        };
+    }
+
+    pause()  { this.#activeTask?.pause(); }
+    resume() { this.#activeTask?.resume(); }
+    cancel() { this.#activeTask?.cancel(); this.#activeTask = null; }
+
+    // ── Compressão ───────────────────────────────────────────
+    async #compressImage(file) {
+        const bmp    = await createImageBitmap(file);
+        const MAX    = 1280;
+        const ratio  = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+        const canvas = Object.assign(document.createElement('canvas'), {
+            width:  Math.round(bmp.width  * ratio),
+            height: Math.round(bmp.height * ratio)
+        });
+        canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+        bmp.close();
+        return new Promise(res => canvas.toBlob(b => res(b), 'image/webp', 0.82));
+    }
+
+    async #generateImageThumbnail(file) {
+        const bmp    = await createImageBitmap(file);
+        const SIZE   = 200;
+        const ratio  = Math.min(SIZE / bmp.width, SIZE / bmp.height);
+        const canvas = Object.assign(document.createElement('canvas'), {
+            width:  Math.round(bmp.width  * ratio),
+            height: Math.round(bmp.height * ratio)
+        });
+        canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+        bmp.close();
+        return new Promise(res => canvas.toBlob(b => res(b), 'image/webp', 0.7));
+    }
+
+    async #generateVideoThumbnail(file) {
+        return new Promise((resolve, reject) => {
+            const video  = document.createElement('video');
+            const objUrl = URL.createObjectURL(file);
+            video.preload = 'metadata';
+            video.muted   = true;
+            video.src     = objUrl;
+            video.addEventListener('loadeddata', () => {
+                video.currentTime = Math.min(1, video.duration / 10);
+            });
+            video.addEventListener('seeked', () => {
+                const canvas = Object.assign(document.createElement('canvas'), {
+                    width: 320, height: Math.round(320 * (video.videoHeight / video.videoWidth))
+                });
+                canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+                URL.revokeObjectURL(objUrl);
+                canvas.toBlob(b => b ? resolve(b) : reject(new Error('canvas vazio')), 'image/webp', 0.7);
+            });
+            video.addEventListener('error', () => { URL.revokeObjectURL(objUrl); reject(new Error('vídeo inválido')); });
+        });
+    }
+
+    // ── Criptografia ─────────────────────────────────────────
+    async #encryptBuffer(arrayBuf) {
+        const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+        const iv  = crypto.getRandomValues(new Uint8Array(12));
+        const ct  = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, arrayBuf);
+        const raw = await crypto.subtle.exportKey('raw', key);
+        return {
+            encrypted: ct,
+            keyB64:    MediaUploader.#bufToB64(raw),
+            ivB64:     MediaUploader.#bufToB64(iv.buffer)
+        };
+    }
+
+    /** Descriptografa URL de mídia baixada para um Blob URL temporário. */
+    static async decryptMedia(url, keyB64, ivB64) {
+        const res       = await fetch(url);
+        const encrypted = await res.arrayBuffer();
+        const key       = await crypto.subtle.importKey('raw', MediaUploader.#b64ToBuf(keyB64), { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+        const iv        = MediaUploader.#b64ToBuf(ivB64);
+        const plain     = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(iv) }, key, encrypted);
+        return URL.createObjectURL(new Blob([plain]));
+    }
+
+    // ── Upload ───────────────────────────────────────────────
+    async #uploadRaw(blob, path) {
+        const storRef = ref(this.#storage, path);
+        const snap    = await uploadBytes(storRef, blob);
+        return getDownloadURL(snap.ref);
+    }
+
+    async #uploadWithRetry(blob, path, onProgress) {
+        let lastErr;
+        for (let attempt = 0; attempt < MediaUploader.#RETRIES; attempt++) {
+            if (attempt > 0) await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
+            try {
+                return await this.#uploadResumable(blob, path, onProgress);
+            } catch (e) {
+                lastErr = e;
+                if (e.code === 'storage/canceled') throw e; // cancelado → não tenta de novo
+            }
+        }
+        throw lastErr;
+    }
+
+    #uploadResumable(blob, path, onProgress) {
+        return new Promise((resolve, reject) => {
+            const storRef = ref(this.#storage, path);
+            const task    = uploadBytesResumable(storRef, blob);
+            this.#activeTask = task;
+            task.on('state_changed',
+                snap => onProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
+                err  => reject(err),
+                ()   => getDownloadURL(task.snapshot.ref).then(resolve).catch(reject)
+            );
+        });
+    }
+
+    static #bufToB64(buf) {
+        return btoa(String.fromCharCode(...new Uint8Array(buf instanceof ArrayBuffer ? buf : buf.buffer)));
+    }
+
+    static #b64ToBuf(b64) {
+        const bin = atob(b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return arr.buffer;
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// 😊 EMOJI GIF PICKER — seletor de emojis, GIFs e stickers
+// ──────────────────────────────────────────────────────────────
+// Não depende de API externa. GIFs são URLs Tenor públicas curadas.
+// Stickers são emojis Unicode grandes estilizados.
+// Recentes persistidos em localStorage.
+class EmojiGifPicker {
+    static #RECENT_MAX = 20;
+    static #EMOJI_RECENT_KEY = 'egp-emoji-recents';
+    static #GIF_RECENT_KEY   = 'egp-gif-recents';
+
+    static #EMOJI_CATEGORIES = [
+        { label: '🕐 Recentes', id: 'recents',     emojis: [] },
+        { label: '😀 Rostos',   id: 'faces',
+          emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖'] },
+        { label: '👋 Gestos',   id: 'gestures',
+          emojis: ['👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦵','🦶','👂','🦻','👃','🫀','🫁','🧠','🦷','🦴','👀','👁️','👅','👄','💋','🫦'] },
+        { label: '🐱 Animais',  id: 'animals',
+          emojis: ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🐛','🦋','🐌','🐞','🐜','🦗','🕷️','🦂','🐢','🦎','🐍','🐲','🦕','🦖','🦎','🐳','🐋','🦈','🦑','🐙','🦞','🦀','🐠','🐟','🐡','🐬','🦭','🐊','🐆','🐅','��','🦧','🐘','🦛','🦏','🐪','🦒','🦓','🦌','🐂','🐃','🐄','🐎','🐖','🐏','🐑','🦙','🐐','🦘','🐕','🐩','🦮','🐈','🐓','🦃','🦚','🦜','🦢','🦩','🕊️','🐇','🦝','🦨','🦡','🦦','🦥','🐁','🐀','🐿️','🦔'] },
+        { label: '🍕 Comidas',  id: 'food',
+          emojis: ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🧄','🧅','🥔','🍠','🫘','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥮','🍢','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🧃','🥤','🧋','☕','🍵','🫖','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾'] },
+        { label: '⚽ Esportes', id: 'sports',
+          emojis: ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🏓','🏸','🏒','🥍','🏑','🏏','🥅','⛳','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛷','⛸️','🥌','🎿','⛷️','🏂','🪂','🏋️','🤼','🤸','🏄','🚣','🧗','🚴','🏇','🤺','🏊','🤽','🏌️','🏇','🧘','🛼','🛻','🏆','🥇','🥈','🥉','🏅','🎖️','🎗️','🎟️','🎫'] },
+        { label: '🌍 Viagem',   id: 'travel',
+          emojis: ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🏍️','🛵','🛺','🚲','🛴','🛹','🛼','🚏','🛣️','🛤️','⛽','🚨','🚥','🚦','🛑','🚧','⚓','🛟','⛵','🚤','🛥️','🛳️','🚢','✈️','🛩️','🛫','🛬','🪂','💺','🚁','🚟','🚠','🚡','🛰️','🚀','🛸','🪄','🏖️','🏕️','🏔️','🗻','🏠','🏡','🏢','🏣','🏤','🏥','🏦','🏨','🏩','🏪','🏫','🏭','🗼','🗽','⛪','🕌','🛕','🕍','🕋','⛩️','🗾','🎑','🏞️','🌅','🌄','🌠','🎇','🎆','🌇','🌆','🏙️','🌃','🌌','🌉','🌁'] },
+        { label: '💡 Objetos',  id: 'objects',
+          emojis: ['💌','🔮','🪄','🧿','🪬','🧸','🪆','🪅','🎎','🎏','🎐','🎀','🎁','🎗️','🎟️','🎫','🎖️','🏆','📱','📲','💻','🖥️','🖨️','🖱️','⌨️','🖲️','💾','💿','📀','🧮','📷','📸','📹','🎥','📽️','🎞️','📞','☎️','📟','📠','📺','📻','🧭','⏱️','⌚','🕰️','⏳','📡','🔋','🔌','💡','🔦','🕯️','🗑️','💰','💴','💵','💶','💷','💸','💳','🪙','💹','📈','📉','📊','📋','📌','📍','✂️','🗃️','🗄️','🗑️','🔒','🔓','🔑','🗝️','🔨','🪓','⛏️','⚒️','🛠️','🗡️','⚔️','🛡️','🪚','🔧','🪛','🔩','⚙️','🗜️','🪝','🧲','🪜','⚗️','🧪','🧫','🔬','🔭','📡','💈','🚿','🛁','🪠','🧴','🧷','🧹','🧺','🧻','🪣','🧼','🫧'] },
+        { label: '🔣 Símbolos', id: 'symbols',
+          emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','❌','⭕','🛑','⛔','📛','🚫','💯','💢','♨️','🚷','🚯','🚳','🚱','🔞','📵','🔇','🔕','🔃','🔄','🔙','🔛','🔝','🛗','🚩','🏴','🏳️','🏳️‍🌈','🏳️‍⚧️','🏴‍☠️'] }
+    ];
+
+    static #GIF_CATEGORIES = [
+        { label: '😂 Reação',   id: 'reacao',   gifs: [
+            { url: 'https://media.tenor.com/W6SgMp6FRxIAAAAC/lol.gif',        label: 'LOL' },
+            { url: 'https://media.tenor.com/9LbFNX92vsUAAAAC/clap.gif',       label: 'Palmas' },
+            { url: 'https://media.tenor.com/dkVwXPdEJlwAAAAC/thumbsup.gif',   label: 'Joinha' },
+            { url: 'https://media.tenor.com/IKFVhLyHqzMAAAAC/facepalm.gif',   label: 'Facepalm' },
+            { url: 'https://media.tenor.com/FGV0KqQjJVoAAAAC/mindblown.gif',  label: 'Incrível' },
+            { url: 'https://media.tenor.com/lIspJeETzscAAAAC/shrug.gif',      label: 'Não sei' }
+        ]},
+        { label: '🎉 Diversão', id: 'diversao', gifs: [
+            { url: 'https://media.tenor.com/7FOJKSDUaCsAAAAC/dance.gif',       label: 'Dança' },
+            { url: 'https://media.tenor.com/w3IfnSRjFN4AAAAC/party.gif',      label: 'Festa' },
+            { url: 'https://media.tenor.com/RxOZNBvPGngAAAAC/winning.gif',    label: 'Vitória' },
+            { url: 'https://media.tenor.com/eVCT6bSwPa4AAAAC/celebrate.gif',  label: 'Celebrar' },
+            { url: 'https://media.tenor.com/sbwuLhLiMcAAAAAC/happy.gif',      label: 'Feliz' },
+            { url: 'https://media.tenor.com/lXiDyvMRUjQAAAAC/excited.gif',    label: 'Animado' }
+        ]},
+        { label: '👋 Saudação', id: 'saudacao', gifs: [
+            { url: 'https://media.tenor.com/mGxaGMBsyugAAAAC/hi.gif',         label: 'Oi' },
+            { url: 'https://media.tenor.com/GwQp5mTqH4MAAAAC/bye.gif',        label: 'Tchau' },
+            { url: 'https://media.tenor.com/I1-lfClMCqIAAAAC/goodmorning.gif',label: 'Bom dia' },
+            { url: 'https://media.tenor.com/w0dV43RyCc4AAAAC/goodnight.gif',  label: 'Boa noite' },
+            { url: 'https://media.tenor.com/OcA3fwGivz4AAAAC/welcome.gif',    label: 'Bem-vindo' },
+            { url: 'https://media.tenor.com/1pXbV4bSmqcAAAAC/wave.gif',       label: 'Aceno' }
+        ]},
+        { label: '❤️ Love',     id: 'love',     gifs: [
+            { url: 'https://media.tenor.com/0e_iyJq9NhUAAAAC/hearts.gif',     label: 'Corações' },
+            { url: 'https://media.tenor.com/JEkSQtoyHc4AAAAC/love.gif',       label: 'Love' },
+            { url: 'https://media.tenor.com/8dDkh5cPjroAAAAC/hug.gif',        label: 'Abraço' },
+            { url: 'https://media.tenor.com/4_e5DOCpFpkAAAAC/kiss.gif',       label: 'Beijo' },
+            { url: 'https://media.tenor.com/3bQqJ7QoOqkAAAAC/adorable.gif',   label: 'Fofo' },
+            { url: 'https://media.tenor.com/JrMJkZf7e1UAAAAC/cutecat.gif',    label: 'Gatinho' }
+        ]},
+        { label: '😮 Surpresa', id: 'surpresa', gifs: [
+            { url: 'https://media.tenor.com/rTFWOQ5QBTIAAAAC/wow.gif',        label: 'Wow' },
+            { url: 'https://media.tenor.com/t5Cj5OPbm-MAAAAC/omg.gif',       label: 'OMG' },
+            { url: 'https://media.tenor.com/V5dkVL3bV1YAAAAC/shocked.gif',   label: 'Chocado' },
+            { url: 'https://media.tenor.com/qSWabKF2EMYAAAAC/whatdafaq.gif', label: 'What?!' },
+            { url: 'https://media.tenor.com/Pyd38RM2NxsAAAAC/nooo.gif',      label: 'Noooo' },
+            { url: 'https://media.tenor.com/c8dOr75bYlgAAAAC/seriously.gif', label: 'Sério?' }
+        ]}
+    ];
+
+    static #STICKER_CATEGORIES = [
+        { label: '😂 Humor',  emojis: ['😂','🤣','💀','🥲','😭','🤡','🥴','😵','🤯','🫠','🫢','🫣','😶‍🌫️'] },
+        { label: '❤️ Amor',   emojis: ['❤️','🥰','😍','💕','💘','💝','💋','🫶','🤍','💜','💛','🧡','💚'] },
+        { label: '🎉 Festa',  emojis: ['🎉','🎊','🥳','🎈','🎁','🏆','🥇','🎆','🎇','✨','🌟','💫','⭐'] },
+        { label: '👍 Reação', emojis: ['👍','👎','👏','🙌','🤝','🫡','💯','✅','❌','‼️','⁉️','❓','❗'] },
+        { label: '🤔 Pensando', emojis: ['🤔','😏','🙄','😒','😤','🤨','🫤','😑','😐','🤐','😶','🫥'] },
+        { label: '🔥 Fire',   emojis: ['🔥','💥','⚡','🌊','🌈','☄️','🌪️','💨','🫧','🌙','⭐','🌞','🌝'] }
+    ];
+
+    #panel     = null; // elemento DOM (lazy)
+    #onPick    = null;
+    #activeTab = 'emoji';
+    #activeEmojiCat = 'faces';
+    #activeGifCat   = 'reacao';
+    #activeStickerCat = 0;
+    #searchTimer = null;
+
+    /**
+     * Exibe o picker acima de anchorEl.
+     * @param {HTMLElement} anchorEl
+     * @param {(payload:{type,value}) => void} onPick
+     */
+    show(anchorEl, onPick) {
+        this.#onPick = onPick;
+        if (!this.#panel) this.#buildPanel();
+        this.#updateRecents();
+        document.body.appendChild(this.#panel);
+        this.#panel.classList.remove('emoji-gif-panel--hidden');
+        this.#positionPanel(anchorEl);
+
+        // Fecha ao clicar fora
+        const outsideHandler = e => {
+            if (!this.#panel.contains(e.target) && e.target !== anchorEl) {
+                this.hide();
+                document.removeEventListener('pointerdown', outsideHandler);
+            }
+        };
+        setTimeout(() => document.addEventListener('pointerdown', outsideHandler), 10);
+    }
+
+    hide() { this.#panel?.classList.add('emoji-gif-panel--hidden'); }
+
+    // ── Build DOM ─────────────────────────────────────────────
+    #buildPanel() {
+        const el = document.createElement('div');
+        el.className = 'emoji-gif-panel emoji-gif-panel--hidden';
+        el.setAttribute('role', 'dialog');
+        el.setAttribute('aria-label', 'Seletor de emoji e GIF');
+
+        el.innerHTML = `
+          <div class="egp-tabs" role="tablist">
+            <button class="egp-tab egp-tab--active" data-tab="emoji" role="tab">😀 Emoji</button>
+            <button class="egp-tab" data-tab="gif"   role="tab">🎬 GIF</button>
+            <button class="egp-tab" data-tab="sticker" role="tab">🌟 Sticker</button>
+          </div>
+          <div class="egp-search-wrap">
+            <input class="egp-search" type="search" placeholder="Buscar emoji..." autocomplete="off" spellcheck="false">
+          </div>
+          <div class="egp-cat-bar" id="egpCatBar"></div>
+          <div class="egp-body" id="egpBody"></div>
+        `;
+
+        el.querySelectorAll('.egp-tab').forEach(btn => {
+            btn.addEventListener('click', () => this.#switchTab(btn.dataset.tab));
+        });
+
+        const search = el.querySelector('.egp-search');
+        search.addEventListener('input', () => {
+            clearTimeout(this.#searchTimer);
+            this.#searchTimer = setTimeout(() => this.#doSearch(search.value.trim()), 200);
+        });
+
+        this.#panel = el;
+        this.#renderTab('emoji');
+    }
+
+    #positionPanel(anchor) {
+        const rect = anchor.getBoundingClientRect();
+        const panelH = 380;
+        const top  = rect.top - panelH - 8;
+        this.#panel.style.position = 'fixed';
+        this.#panel.style.left     = Math.max(8, Math.min(rect.left, window.innerWidth - 348)) + 'px';
+        this.#panel.style.top      = (top < 8 ? rect.bottom + 8 : top) + 'px';
+        this.#panel.style.zIndex   = '9999';
+    }
+
+    #switchTab(tab) {
+        this.#activeTab = tab;
+        this.#panel.querySelectorAll('.egp-tab').forEach(b => b.classList.toggle('egp-tab--active', b.dataset.tab === tab));
+        const search = this.#panel.querySelector('.egp-search');
+        search.placeholder = tab === 'emoji' ? 'Buscar emoji...' : tab === 'gif' ? 'Buscar GIF...' : 'Buscar sticker...';
+        search.value = '';
+        this.#renderTab(tab);
+    }
+
+    #renderTab(tab) {
+        const catBar = this.#panel.querySelector('#egpCatBar');
+        const body   = this.#panel.querySelector('#egpBody');
+
+        if (tab === 'emoji') {
+            catBar.innerHTML = EmojiGifPicker.#EMOJI_CATEGORIES.map(c =>
+                `<button class="egp-cat-btn${c.id === this.#activeEmojiCat ? ' egp-cat-btn--active':''}" data-cat="${c.id}" title="${c.label}">${c.emojis?.[0] ?? '🕐'}</button>`
+            ).join('');
+            catBar.querySelectorAll('.egp-cat-btn').forEach(b => {
+                b.addEventListener('click', () => {
+                    this.#activeEmojiCat = b.dataset.cat;
+                    this.#renderEmojiGrid(b.dataset.cat);
+                    catBar.querySelectorAll('.egp-cat-btn').forEach(x => x.classList.toggle('egp-cat-btn--active', x === b));
+                });
+            });
+            this.#renderEmojiGrid(this.#activeEmojiCat);
+        } else if (tab === 'gif') {
+            catBar.innerHTML = EmojiGifPicker.#GIF_CATEGORIES.map(c =>
+                `<button class="egp-cat-btn${c.id === this.#activeGifCat ? ' egp-cat-btn--active':''}" data-cat="${c.id}" title="${c.label}">${c.label.split(' ')[0]}</button>`
+            ).join('');
+            catBar.querySelectorAll('.egp-cat-btn').forEach(b => {
+                b.addEventListener('click', () => {
+                    this.#activeGifCat = b.dataset.cat;
+                    this.#renderGifGrid(b.dataset.cat);
+                    catBar.querySelectorAll('.egp-cat-btn').forEach(x => x.classList.toggle('egp-cat-btn--active', x === b));
+                });
+            });
+            this.#renderGifGrid(this.#activeGifCat);
+        } else {
+            catBar.innerHTML = EmojiGifPicker.#STICKER_CATEGORIES.map((c, i) =>
+                `<button class="egp-cat-btn${i === this.#activeStickerCat ? ' egp-cat-btn--active':''}" data-idx="${i}" title="${c.label}">${c.emojis[0]}</button>`
+            ).join('');
+            catBar.querySelectorAll('.egp-cat-btn').forEach(b => {
+                b.addEventListener('click', () => {
+                    this.#activeStickerCat = +b.dataset.idx;
+                    this.#renderStickerGrid(this.#activeStickerCat);
+                    catBar.querySelectorAll('.egp-cat-btn').forEach(x => x.classList.toggle('egp-cat-btn--active', x === b));
+                });
+            });
+            this.#renderStickerGrid(this.#activeStickerCat);
+        }
+    }
+
+    #renderEmojiGrid(catId) {
+        const cat    = EmojiGifPicker.#EMOJI_CATEGORIES.find(c => c.id === catId);
+        const emojis = catId === 'recents'
+            ? JSON.parse(localStorage.getItem(EmojiGifPicker.#EMOJI_RECENT_KEY) || '[]')
+            : (cat?.emojis ?? []);
+        const body = this.#panel.querySelector('#egpBody');
+        body.innerHTML = `<div class="egp-emoji-grid">${
+            emojis.map(e => `<button class="egp-emoji-item" title="${e}">${e}</button>`).join('')
+        }</div>`;
+        body.querySelectorAll('.egp-emoji-item').forEach(b => {
+            b.addEventListener('click', () => this.#pickEmoji(b.textContent));
+        });
+    }
+
+    #renderGifGrid(catId) {
+        const cat  = EmojiGifPicker.#GIF_CATEGORIES.find(c => c.id === catId);
+        const gifs = cat?.gifs ?? [];
+        const body = this.#panel.querySelector('#egpBody');
+        body.innerHTML = `<div class="egp-gif-grid">${
+            gifs.map(g => `<button class="egp-gif-item" title="${g.label}"><img loading="lazy" src="${g.url}" alt="${g.label}"></button>`).join('')
+        }</div>`;
+        body.querySelectorAll('.egp-gif-item').forEach((b, i) => {
+            b.addEventListener('click', () => this.#pickGif(gifs[i]));
+        });
+    }
+
+    #renderStickerGrid(idx) {
+        const cat  = EmojiGifPicker.#STICKER_CATEGORIES[idx] ?? EmojiGifPicker.#STICKER_CATEGORIES[0];
+        const body = this.#panel.querySelector('#egpBody');
+        body.innerHTML = `<div class="egp-sticker-grid">${
+            cat.emojis.map(e => `<button class="egp-sticker-item" title="${e}">${e}</button>`).join('')
+        }</div>`;
+        body.querySelectorAll('.egp-sticker-item').forEach(b => {
+            b.addEventListener('click', () => {
+                this.hide();
+                this.#onPick?.({ type: 'sticker', value: b.textContent });
+            });
+        });
+    }
+
+    #doSearch(query) {
+        if (!query) { this.#renderTab(this.#activeTab); return; }
+        const body = this.#panel.querySelector('#egpBody');
+        if (this.#activeTab === 'emoji' || this.#activeTab === 'sticker') {
+            const all = EmojiGifPicker.#EMOJI_CATEGORIES.flatMap(c => c.emojis ?? []);
+            const matches = all.filter(e => e.codePointAt(0).toString(16).includes(query.toLowerCase()) || true).slice(0, 80);
+            // Busca simples: filtra emojis cujas categorias contenham o termo
+            const results = EmojiGifPicker.#EMOJI_CATEGORIES
+                .filter(c => c.label.toLowerCase().includes(query.toLowerCase()))
+                .flatMap(c => c.emojis ?? []);
+            const final = results.length ? results.slice(0, 80) : matches.slice(0, 80);
+            body.innerHTML = `<div class="egp-emoji-grid">${final.map(e => `<button class="egp-emoji-item">${e}</button>`).join('')}</div>`;
+            body.querySelectorAll('.egp-emoji-item').forEach(b => b.addEventListener('click', () => this.#pickEmoji(b.textContent)));
+        } else {
+            const all = EmojiGifPicker.#GIF_CATEGORIES.flatMap(c => c.gifs);
+            const matches = all.filter(g => g.label.toLowerCase().includes(query.toLowerCase()));
+            body.innerHTML = `<div class="egp-gif-grid">${matches.map(g => `<button class="egp-gif-item" title="${g.label}"><img loading="lazy" src="${g.url}" alt="${g.label}"></button>`).join('')}</div>`;
+            body.querySelectorAll('.egp-gif-item').forEach((b, i) => b.addEventListener('click', () => this.#pickGif(matches[i])));
+        }
+    }
+
+    #pickEmoji(emoji) {
+        this.hide();
+        this.#saveRecent(EmojiGifPicker.#EMOJI_RECENT_KEY, emoji);
+        this.#onPick?.({ type: 'emoji', value: emoji });
+    }
+
+    #pickGif(gif) {
+        this.hide();
+        this.#saveRecent(EmojiGifPicker.#GIF_RECENT_KEY, gif.url);
+        this.#onPick?.({ type: 'gif', value: gif.url, label: gif.label });
+    }
+
+    #saveRecent(key, value) {
+        const arr = JSON.parse(localStorage.getItem(key) || '[]').filter(v => v !== value);
+        arr.unshift(value);
+        localStorage.setItem(key, JSON.stringify(arr.slice(0, EmojiGifPicker.#RECENT_MAX)));
+    }
+
+    #updateRecents() {
+        const cat = EmojiGifPicker.#EMOJI_CATEGORIES.find(c => c.id === 'recents');
+        if (cat) cat.emojis = JSON.parse(localStorage.getItem(EmojiGifPicker.#EMOJI_RECENT_KEY) || '[]');
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+// 🖼 FILE MESSAGE RENDERER — renderização de mensagens de mídia
+// ──────────────────────────────────────────────────────────────
+// Todos os métodos são estáticos. Singleton para o lightbox.
+class FileMessageRenderer {
+    static #lightboxEl = null;
+    static #blobUrls   = new Set(); // Blob URLs abertos — revogar ao fechar lightbox
+
+    /** Retorna HTML do corpo da mensagem para tipos de mídia. */
+    static buildBody(data, isOwn, time, statusHtml, esc) {
+        switch (data.type) {
+            case 'image':    return FileMessageRenderer.#buildImageBubble(data, time, statusHtml, isOwn, esc);
+            case 'video':    return FileMessageRenderer.#buildVideoBubble(data, time, statusHtml, isOwn, esc);
+            case 'gif':      return FileMessageRenderer.#buildGifBubble(data, time, statusHtml, esc);
+            case 'pdf':      return FileMessageRenderer.#buildPdfBubble(data, time, statusHtml, esc);
+            case 'document': return FileMessageRenderer.#buildDocBubble(data, time, statusHtml, esc);
+            case 'audio':    return null; // tratado pelo buildAudioPlayer existente
+            case 'sticker':  return FileMessageRenderer.#buildStickerBubble(data);
+            default:         return null;
+        }
+    }
+
+    static #buildImageBubble(data, time, statusHtml, isOwn, esc) {
+        const thumb = data.thumbnailUrl || data.mediaUrl || '';
+        const name  = esc(data.fileName || 'imagem');
+        return `
+          <div class="msg-media msg-media-image" data-media-url="${esc(data.mediaUrl)}" data-key="${esc(data.mediaKey||'')}" data-iv="${esc(data.mediaIv||'')}" data-type="image" title="${name}">
+            <img class="msg-media-img" src="${esc(thumb)}" alt="${name}" loading="lazy">
+            <div class="msg-media-overlay"><span class="msg-media-icon">🔍</span></div>
+            ${data.mediaKey ? '<span class="msg-media-lock" title="Cifrado E2E">🔒</span>' : ''}
+          </div>
+          <span class="chat-msg-time">${time}</span>${statusHtml}`;
+    }
+
+    static #buildVideoBubble(data, time, statusHtml, isOwn, esc) {
+        const poster = data.thumbnailUrl ? esc(data.thumbnailUrl) : '';
+        const name   = esc(data.fileName || 'vídeo');
+        return `
+          <div class="msg-media msg-media-video" data-media-url="${esc(data.mediaUrl)}" data-key="${esc(data.mediaKey||'')}" data-iv="${esc(data.mediaIv||'')}" data-type="video" title="${name}">
+            <div class="msg-media-video-thumb" style="${poster ? `background-image:url('${poster}')` : ''}">
+              <button class="msg-media-play-btn" aria-label="Reproduzir vídeo">▶</button>
+              ${data.mediaKey ? '<span class="msg-media-lock">🔒</span>' : ''}
+            </div>
+          </div>
+          <span class="chat-msg-time">${time}</span>${statusHtml}`;
+    }
+
+    static #buildGifBubble(data, time, statusHtml, esc) {
+        const src = esc(data.mediaUrl || data.gifUrl || '');
+        return `
+          <div class="msg-media msg-media-gif">
+            <img class="msg-media-gif-img" src="${src}" alt="GIF" loading="lazy">
+            <span class="msg-media-gif-badge">GIF</span>
+          </div>
+          <span class="chat-msg-time">${time}</span>${statusHtml}`;
+    }
+
+    static #buildPdfBubble(data, time, statusHtml, esc) {
+        const name = esc(data.fileName || 'documento.pdf');
+        const size = FileMessageRenderer.#fmtSize(data.fileSize);
+        return `
+          <div class="msg-media msg-media-pdf" data-media-url="${esc(data.mediaUrl)}" data-key="${esc(data.mediaKey||'')}" data-iv="${esc(data.mediaIv||'')}">
+            <span class="msg-media-doc-icon">📄</span>
+            <div class="msg-media-doc-info">
+              <span class="msg-media-doc-name" title="${name}">${name}</span>
+              <span class="msg-media-doc-size">${size}${data.mediaKey ? ' · 🔒' : ''}</span>
+            </div>
+            <button class="msg-media-download-btn" title="Baixar PDF">⬇️</button>
+          </div>
+          <span class="chat-msg-time">${time}</span>${statusHtml}`;
+    }
+
+    static #buildDocBubble(data, time, statusHtml, esc) {
+        const name = esc(data.fileName || 'arquivo');
+        const size = FileMessageRenderer.#fmtSize(data.fileSize);
+        const icon = FileMessageRenderer.#docIcon(data.fileName || '');
+        return `
+          <div class="msg-media msg-media-document" data-media-url="${esc(data.mediaUrl)}" data-key="${esc(data.mediaKey||'')}" data-iv="${esc(data.mediaIv||'')}">
+            <span class="msg-media-doc-icon">${icon}</span>
+            <div class="msg-media-doc-info">
+              <span class="msg-media-doc-name" title="${name}">${name}</span>
+              <span class="msg-media-doc-size">${size}${data.mediaKey ? ' · 🔒' : ''}</span>
+            </div>
+            <button class="msg-media-download-btn" title="Baixar arquivo">⬇️</button>
+          </div>
+          <span class="chat-msg-time">${time}</span>${statusHtml}`;
+    }
+
+    static #buildStickerBubble(data) {
+        return `<span class="msg-sticker">${data.text || ''}</span>`;
+    }
+
+    /** Abre lightbox para imagem ou vídeo (com descriptografia se necessário). */
+    static async openLightbox(mediaUrl, mediaKey, mediaIv, type) {
+        if (!FileMessageRenderer.#lightboxEl) FileMessageRenderer.#createLightbox();
+        const lightbox = FileMessageRenderer.#lightboxEl;
+        const inner    = lightbox.querySelector('.lightbox-inner');
+        inner.innerHTML = '<div class="lightbox-loading">⏳ Carregando...</div>';
+        lightbox.showModal();
+
+        try {
+            let blobUrl = mediaUrl;
+            if (mediaKey && mediaIv) {
+                blobUrl = await MediaUploader.decryptMedia(mediaUrl, mediaKey, mediaIv);
+                FileMessageRenderer.#blobUrls.add(blobUrl);
+            }
+            if (type === 'video') {
+                inner.innerHTML = `<video src="${blobUrl}" controls autoplay class="lightbox-video"></video>`;
+            } else {
+                inner.innerHTML = `<img src="${blobUrl}" class="lightbox-img" alt="Imagem">`;
+            }
+        } catch {
+            inner.innerHTML = '<div class="lightbox-loading">❌ Erro ao carregar mídia</div>';
+        }
+    }
+
+    static #createLightbox() {
+        const dlg = document.createElement('dialog');
+        dlg.className = 'media-lightbox';
+        dlg.innerHTML = `
+          <button class="lightbox-close" aria-label="Fechar">✕</button>
+          <div class="lightbox-inner"></div>`;
+        dlg.querySelector('.lightbox-close').addEventListener('click', () => FileMessageRenderer.#closeLightbox());
+        dlg.addEventListener('click', e => { if (e.target === dlg) FileMessageRenderer.#closeLightbox(); });
+        document.body.appendChild(dlg);
+        FileMessageRenderer.#lightboxEl = dlg;
+    }
+
+    static #closeLightbox() {
+        FileMessageRenderer.#lightboxEl?.close();
+        FileMessageRenderer.#lightboxEl.querySelector('.lightbox-inner').innerHTML = '';
+        FileMessageRenderer.#blobUrls.forEach(u => URL.revokeObjectURL(u));
+        FileMessageRenderer.#blobUrls.clear();
+    }
+
+    /** Vincula eventos de clique nas bolhas de mídia renderizadas. */
+    static bindMediaEvents(msgEl) {
+        // Lightbox para imagem
+        msgEl.querySelector('.msg-media-image')?.addEventListener('click', e => {
+            const el = e.currentTarget;
+            FileMessageRenderer.openLightbox(el.dataset.mediaUrl, el.dataset.key, el.dataset.iv, 'image');
+        });
+
+        // Player de vídeo inline
+        msgEl.querySelector('.msg-media-play-btn')?.addEventListener('click', e => {
+            e.stopPropagation();
+            const el = e.currentTarget.closest('.msg-media-video');
+            FileMessageRenderer.openLightbox(el.dataset.mediaUrl, el.dataset.key, el.dataset.iv, 'video');
+        });
+
+        // Download de PDF/documento
+        msgEl.querySelectorAll('.msg-media-download-btn').forEach(btn => {
+            btn.addEventListener('click', async e => {
+                e.stopPropagation();
+                const media = btn.closest('[data-media-url]');
+                const { mediaUrl, key, iv } = media.dataset;
+                btn.textContent = '⏳';
+                try {
+                    let blobUrl = mediaUrl;
+                    if (key && iv) {
+                        blobUrl = await MediaUploader.decryptMedia(mediaUrl, key, iv);
+                    }
+                    const a = Object.assign(document.createElement('a'), {
+                        href: blobUrl, download: media.querySelector('.msg-media-doc-name')?.textContent || 'arquivo'
+                    });
+                    document.body.appendChild(a); a.click(); a.remove();
+                    if (key) setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+                } catch { btn.textContent = '❌'; } finally { btn.textContent = '⬇️'; }
+            });
+        });
+    }
+
+    static #docIcon(name) {
+        const ext = name.split('.').pop()?.toLowerCase();
+        const MAP = { pdf:'📄', xlsx:'📊', xls:'📊', docx:'📝', doc:'📝', pptx:'📊', ppt:'📊', zip:'🗜️', rar:'🗜️', txt:'📃', csv:'📊', mp3:'🎵', ogg:'🎵', wav:'🎵' };
+        return MAP[ext] ?? '📎';
+    }
+
+    static #fmtSize(bytes) {
+        if (!bytes) return '';
+        if (bytes < 1024)        return bytes + ' B';
+        if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    }
+}
+
 const FIREBASE_CONFIG = {
     apiKey:            'AIzaSyCIVshCdXm7Fp1X3kxGr5GZOF_jUBN3ChA',
     authDomain:        'chatmilhao.firebaseapp.com',
@@ -791,6 +1476,12 @@ class ChatApp {
     #p2pReceivedIds     = new Set();
     #groupKeyHolders    = new Set();
     #unsubGroupKeyStore = null;
+
+    // Media / Emoji
+    #mediaUploader     = null;
+    #emojiPicker       = null;
+    #pendingUploadTask = null;  // MediaUploader ativo (para cancel)
+    #pendingBlobUrls   = [];    // Blob URLs de preview a revogar no cleanup
 
     // Timers
     #tokenRenewalTimer = null;
@@ -1465,6 +2156,10 @@ class ChatApp {
             : '';
         const bodyHtml = (data.type === 'audio' && data.audioURL)
             ? this.#buildAudioPlayer(data.audioURL, time, isOwn)
+            : (data.type === 'sticker' && data.text)
+            ? (FileMessageRenderer.buildBody(data, isOwn, time, statusHtml, s => this.#esc(s)) ?? `<p class="chat-msg-text">${this.#esc(data.text || '')}</p><span class="chat-msg-time">${time}</span>${statusHtml}`)
+            : (data.type && data.type !== 'audio' && data.mediaUrl)
+            ? (FileMessageRenderer.buildBody(data, isOwn, time, statusHtml, s => this.#esc(s)) ?? `<p class="chat-msg-text">${this.#esc(data.text || '')}</p><span class="chat-msg-time">${time}</span>${statusHtml}`)
             : `<p class="chat-msg-text">${this.#esc(data.text || '')}</p><span class="chat-msg-time">${time}</span>${statusHtml}`;
 
         const el     = document.createElement('div');
@@ -1488,6 +2183,7 @@ class ChatApp {
             this.#deleteMessage(realId, type);
         });
         if (data.type === 'audio' && data.audioURL) this.#bindAudioPlayer(el);
+        if (data.type && data.type !== 'audio') FileMessageRenderer.bindMediaEvents(el);
         return el;
     }
 
@@ -1552,6 +2248,216 @@ class ChatApp {
             if (audio.paused) { audio.play(); playBtn.textContent = '⏸️'; }
             else              { audio.pause(); playBtn.textContent = '▶️'; }
         });
+    }
+
+    // ── Media sending ─────────────────────────────────────
+    /** Abre input de arquivo para o chat especificado. */
+    #openFilePicker(chatType) {
+        const input = document.getElementById('mediaFileInput');
+        if (!input) return;
+        input.dataset.chatType = chatType;
+        input.accept = 'image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar';
+        input.click();
+    }
+
+    /** Recebe o arquivo selecionado e exibe o preview bar. */
+    async #handleFileSelected(file, chatType) {
+        try {
+            MediaUploader.validate(file);
+        } catch (e) {
+            alert(e.message);
+            return;
+        }
+        const type   = MediaUploader.resolveType(file.type);
+        const objUrl = URL.createObjectURL(file);
+        this.#pendingBlobUrls.push(objUrl);
+        this.#showPreviewBar(file, objUrl, type, chatType);
+    }
+
+    /** Mostra a barra de preview antes do envio. */
+    #showPreviewBar(file, objUrl, type, chatType) {
+        const barId = chatType === 'group' ? 'filePreviewGroup' : 'filePreviewPrivate';
+        const bar   = document.getElementById(barId);
+        if (!bar) return;
+
+        const isImg  = type === 'image' || type === 'gif';
+        const isVid  = type === 'video';
+        const thumb  = isImg ? `<img src="${objUrl}" class="preview-thumb" alt="">` :
+                       isVid ? `<video src="${objUrl}" class="preview-thumb" muted></video>` :
+                               `<span class="preview-icon">${FileMessageRenderer['_docIcon_'](file.name)}</span>`;
+
+        bar.innerHTML = `
+          <div class="preview-content">
+            ${thumb}
+            <div class="preview-info">
+              <span class="preview-name">${this.#esc(file.name)}</span>
+              <span class="preview-size">${this.#fmtSize(file.size)}</span>
+              <div class="preview-progress" id="previewProgress${chatType}" style="display:none">
+                <div class="preview-progress-bar" id="previewProgressBar${chatType}"></div>
+                <span class="preview-pct" id="previewPct${chatType}">0%</span>
+              </div>
+            </div>
+          </div>
+          <div class="preview-actions">
+            <button class="preview-btn preview-btn--send" id="sendPreview${chatType.charAt(0).toUpperCase()+chatType.slice(1)}" title="Enviar">✔ Enviar</button>
+            <button class="preview-btn preview-btn--cancel" id="cancelPreview${chatType.charAt(0).toUpperCase()+chatType.slice(1)}" title="Cancelar">✕</button>
+          </div>`;
+
+        bar.dataset.pendingUrl  = objUrl;
+        bar.dataset.pendingName = file.name;
+        bar.dataset.pendingSize = file.size;
+        bar.dataset.pendingMime = file.type;
+        bar.dataset.pendingType = type;
+        bar.__pendingFile       = file; // File reference para upload
+        bar.classList.remove('file-preview-bar--hidden');
+
+        // Re-bind dos botões (foram recriados)
+        bar.querySelector(`#sendPreview${chatType.charAt(0).toUpperCase()+chatType.slice(1)}`)
+            ?.addEventListener('click', () => this.#confirmSendPreview(chatType));
+        bar.querySelector(`#cancelPreview${chatType.charAt(0).toUpperCase()+chatType.slice(1)}`)
+            ?.addEventListener('click', () => this.#cancelPreview(chatType));
+    }
+
+    /** Cancela preview e revoga o Blob URL associado. */
+    #cancelPreview(chatType) {
+        const bar = document.getElementById(chatType === 'group' ? 'filePreviewGroup' : 'filePreviewPrivate');
+        if (!bar) return;
+        const url = bar.dataset.pendingUrl;
+        if (url) {
+            URL.revokeObjectURL(url);
+            this.#pendingBlobUrls = this.#pendingBlobUrls.filter(u => u !== url);
+        }
+        bar.__pendingFile = null;
+        bar.innerHTML = '';
+        bar.classList.add('file-preview-bar--hidden');
+        this.#pendingUploadTask?.cancel();
+        this.#pendingUploadTask = null;
+    }
+
+    /** Inicia o upload e envia a mensagem de mídia após conclusão. */
+    async #confirmSendPreview(chatType) {
+        const bar  = document.getElementById(chatType === 'group' ? 'filePreviewGroup' : 'filePreviewPrivate');
+        if (!bar || !bar.__pendingFile || !this.#mediaUploader) return;
+        const file = bar.__pendingFile;
+
+        // Exibe barra de progresso
+        const progWrap = bar.querySelector(`#previewProgress${chatType}`);
+        const progBar  = bar.querySelector(`#previewProgressBar${chatType}`);
+        const pctEl    = bar.querySelector(`#previewPct${chatType}`);
+        if (progWrap) progWrap.style.display = 'flex';
+
+        // Desabilita botões durante upload
+        bar.querySelectorAll('.preview-btn--send').forEach(b => { b.disabled = true; b.textContent = '⏳'; });
+
+        this.#pendingUploadTask = this.#mediaUploader;
+        let result;
+        try {
+            result = await this.#mediaUploader.upload(file, pct => {
+                if (progBar) progBar.style.width = pct + '%';
+                if (pctEl)   pctEl.textContent   = pct + '%';
+            });
+        } catch (e) {
+            if (e.code !== 'storage/canceled') alert('Erro ao enviar arquivo: ' + (e.message || ''));
+            bar.querySelectorAll('.preview-btn--send').forEach(b => { b.disabled = false; b.textContent = '✔ Enviar'; });
+            if (progWrap) progWrap.style.display = 'none';
+            return;
+        } finally {
+            this.#pendingUploadTask = null;
+        }
+
+        // Esconde preview
+        this.#cancelPreview(chatType);
+
+        // Envia mensagem com metadados da mídia
+        await this.#sendMediaMessage(result, chatType);
+    }
+
+    /** Envia mensagem de mídia (após upload). */
+    async #sendMediaMessage(result, chatType) {
+        if (!this.#currentUser) return;
+        const base = {
+            uid:        this.#currentUser.uid,
+            name:       this.#currentUser.displayName || 'Anônimo',
+            photoURL:   this.#currentUser.photoURL || '',
+            type:       result.type,
+            mediaUrl:   result.url,
+            thumbnailUrl: result.thumbnailUrl || null,
+            fileName:   result.fileName,
+            fileSize:   result.fileSize,
+            mimeType:   result.mimeType,
+            mediaKey:   result.mediaKey,
+            mediaIv:    result.mediaIv,
+            text:       null,
+            createdAt:  serverTimestamp(),
+            status:     'sent'
+        };
+
+        if (chatType === 'group') {
+            await addDoc(collection(this.#db, 'groupMessages'), base).catch(console.error);
+        } else if (chatType === 'private' && this.#privatePeer) {
+            const ids    = [this.#currentUser.uid, this.#privatePeer.uid].sort();
+            const chatId = ids.join('_');
+            const colRef = collection(this.#db, 'privateMessages', chatId, 'msgs');
+            await addDoc(colRef, base).catch(console.error);
+        }
+    }
+
+    /** Abre o seletor de emoji/GIF para o chat indicado. */
+    #openEmojiPicker(anchorEl, chatType) {
+        if (!this.#emojiPicker) this.#emojiPicker = new EmojiGifPicker();
+        this.#emojiPicker.show(anchorEl, payload => {
+            if (payload.type === 'emoji') {
+                // Inserir emoji no input
+                const inputId = chatType === 'group' ? 'chatGroupInput' : 'chatPrivateInput';
+                const inp = document.getElementById(inputId);
+                if (inp) {
+                    const { selectionStart: s, selectionEnd: e, value: v } = inp;
+                    inp.value = v.slice(0, s) + payload.value + v.slice(e);
+                    inp.selectionStart = inp.selectionEnd = s + payload.value.length;
+                    inp.dispatchEvent(new Event('input', { bubbles: true }));
+                    inp.focus();
+                }
+            } else if (payload.type === 'gif') {
+                // GIF como mensagem
+                const gifResult = {
+                    type: 'gif', url: payload.value, thumbnailUrl: null,
+                    fileName: 'gif', fileSize: 0, mimeType: 'image/gif',
+                    mediaKey: null, mediaIv: null
+                };
+                this.#sendMediaMessage({ ...gifResult, url: payload.value }, chatType);
+            } else if (payload.type === 'sticker') {
+                // Sticker como mensagem de texto com tipo=sticker
+                this.#sendStickerMessage(payload.value, chatType);
+            }
+        });
+    }
+
+    /** Envia um sticker (emoji grande) como mensagem. */
+    async #sendStickerMessage(emoji, chatType) {
+        if (!this.#currentUser) return;
+        const base = {
+            uid:       this.#currentUser.uid,
+            name:      this.#currentUser.displayName || 'Anônimo',
+            photoURL:  this.#currentUser.photoURL || '',
+            type:      'sticker',
+            text:      emoji,
+            createdAt: serverTimestamp(),
+            status:    'sent'
+        };
+        if (chatType === 'group') {
+            await addDoc(collection(this.#db, 'groupMessages'), base).catch(console.error);
+        } else if (chatType === 'private' && this.#privatePeer) {
+            const ids    = [this.#currentUser.uid, this.#privatePeer.uid].sort();
+            const chatId = ids.join('_');
+            await addDoc(collection(this.#db, 'privateMessages', chatId, 'msgs'), base).catch(console.error);
+        }
+    }
+
+    #fmtSize(bytes) {
+        if (!bytes) return '';
+        if (bytes < 1024)        return bytes + ' B';
+        if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
     }
 
     // ── Delete ────────────────────────────────────────────
@@ -1930,6 +2836,9 @@ class ChatApp {
             const pubKey = await this.#e2e.exportPublicKey();
             await updateDoc(doc(this.#db, 'users', this.#currentUser.uid), { publicKey: pubKey }).catch(() => {});
             this.#listenForGroupKeyStore();
+            // Inicializa uploader de mídia após E2E disponível
+            this.#mediaUploader = new MediaUploader(this.#storage, this.#e2e, this.#currentUser.uid);
+            if (!this.#emojiPicker) this.#emojiPicker = new EmojiGifPicker();
         } catch (e) {
             console.error('[E2E] Erro ao inicializar:', e);
             this.#e2e = null;
@@ -2279,6 +3188,12 @@ class ChatApp {
         this.#p2pReceivedIds.clear();
         this.#groupKeyHolders.clear();
         this.#e2e = null;
+        // Cancelar upload pendente e revogar Blob URLs de preview
+        this.#pendingUploadTask?.cancel();
+        this.#pendingUploadTask = null;
+        this.#pendingBlobUrls.forEach(u => URL.revokeObjectURL(u));
+        this.#pendingBlobUrls = [];
+        this.#mediaUploader = null;
         this.#chatInitialized = false;
         this.#userCardMap.clear();
         this.#userDataMap.clear();
@@ -2413,6 +3328,22 @@ class ChatApp {
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.#sendPrivateMessage(); }
             requestAnimationFrame(() => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px'; });
         });
+
+        // Attach + Emoji
+        document.getElementById('btnAttachGroup')?.addEventListener('click',   () => this.#openFilePicker('group'));
+        document.getElementById('btnAttachPrivate')?.addEventListener('click', () => this.#openFilePicker('private'));
+        document.getElementById('btnEmojiGroup')?.addEventListener('click',    e => this.#openEmojiPicker(e.currentTarget, 'group'));
+        document.getElementById('btnEmojiPrivate')?.addEventListener('click',  e => this.#openEmojiPicker(e.currentTarget, 'private'));
+        document.getElementById('mediaFileInput')?.addEventListener('change',  e => {
+            const file = e.target.files?.[0];
+            const chat = e.target.dataset.chatType || 'group';
+            if (file) this.#handleFileSelected(file, chat);
+            e.target.value = '';
+        });
+        document.getElementById('cancelPreviewGroup')?.addEventListener('click',   () => this.#cancelPreview('group'));
+        document.getElementById('cancelPreviewPrivate')?.addEventListener('click', () => this.#cancelPreview('private'));
+        document.getElementById('sendPreviewGroup')?.addEventListener('click',     () => this.#confirmSendPreview('group'));
+        document.getElementById('sendPreviewPrivate')?.addEventListener('click',   () => this.#confirmSendPreview('private'));
 
         // Navegação
         document.getElementById('btnOpenGroup')?.addEventListener('click',       () => this.#openGroupChat());
