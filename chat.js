@@ -429,9 +429,12 @@ class P2PChannel {
         const sigRef = doc(this.#db, 'p2pSignals', this.#chatId);
         const isInit = this.#myUid < this.#peerUid; // anti-glare
 
+        // ICE candidates numa coleção plana de 3 segmentos (Firestore exige ímpar).
+        // O campo fromUid permite filtrar candidatos do peer no listener.
         this.#pc.onicecandidate = async e => {
             if (!e.candidate) return;
-            await addDoc(collection(this.#db, 'p2pSignals', this.#chatId, 'ice', this.#myUid), e.candidate.toJSON());
+            await addDoc(collection(this.#db, 'p2pSignals', this.#chatId, 'ice'),
+                { ...e.candidate.toJSON(), fromUid: this.#myUid });
         };
         this.#pc.onconnectionstatechange = () => {
             this.#onStateChange(this.#pc.connectionState);
@@ -465,10 +468,16 @@ class P2PChannel {
             this.#unsubs.push(unsubSig);
         }
 
-        const iceRef   = collection(this.#db, 'p2pSignals', this.#chatId, 'ice', this.#peerUid);
+        const iceRef   = query(
+            collection(this.#db, 'p2pSignals', this.#chatId, 'ice'),
+            where('fromUid', '==', this.#peerUid)
+        );
         const unsubIce = onSnapshot(iceRef, snap => {
             snap.docChanges().forEach(c => {
-                if (c.type === 'added') this.#pc.addIceCandidate(c.doc.data()).catch(() => {});
+                if (c.type === 'added') {
+                    const { fromUid: _f, ...candidate } = c.doc.data();
+                    this.#pc.addIceCandidate(candidate).catch(() => {});
+                }
             });
         });
         this.#unsubs.push(unsubIce);
@@ -731,46 +740,47 @@ class EmojiGifPicker {
           emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','❌','⭕','🛑','⛔','📛','🚫','💯','💢','♨️','🚷','🚯','🚳','🚱','🔞','📵','🔇','🔕','🔃','🔄','🔙','🔛','🔝','🛗','🚩','🏴','🏳️','🏳️‍🌈','🏳️‍⚧️','🏴‍☠️'] }
     ];
 
+    // GIFs hospedados no Giphy CDN (sem API key para img src).
     static #GIF_CATEGORIES = [
         { label: '😂 Reação',   id: 'reacao',   gifs: [
-            { url: 'https://media.tenor.com/W6SgMp6FRxIAAAAC/lol.gif',        label: 'LOL' },
-            { url: 'https://media.tenor.com/9LbFNX92vsUAAAAC/clap.gif',       label: 'Palmas' },
-            { url: 'https://media.tenor.com/dkVwXPdEJlwAAAAC/thumbsup.gif',   label: 'Joinha' },
-            { url: 'https://media.tenor.com/IKFVhLyHqzMAAAAC/facepalm.gif',   label: 'Facepalm' },
-            { url: 'https://media.tenor.com/FGV0KqQjJVoAAAAC/mindblown.gif',  label: 'Incrível' },
-            { url: 'https://media.tenor.com/lIspJeETzscAAAAC/shrug.gif',      label: 'Não sei' }
+            { url: 'https://media.giphy.com/media/ZqlvCTNHpqrio/giphy.gif',        label: 'LOL' },
+            { url: 'https://media.giphy.com/media/7rzbxdu0ZEXLy/giphy.gif',        label: 'Palmas' },
+            { url: 'https://media.giphy.com/media/GCvktC0KFy9l6/giphy.gif',        label: 'Joinha' },
+            { url: 'https://media.giphy.com/media/XsUtdIeJ0MWMo/giphy.gif',        label: 'Facepalm' },
+            { url: 'https://media.giphy.com/media/xT0xeJpnrWC4XWblEk/giphy.gif',   label: 'Incrível' },
+            { url: 'https://media.giphy.com/media/RrVzUOXldFe8M/giphy.gif',        label: 'Não sei' }
         ]},
         { label: '🎉 Diversão', id: 'diversao', gifs: [
-            { url: 'https://media.tenor.com/7FOJKSDUaCsAAAAC/dance.gif',       label: 'Dança' },
-            { url: 'https://media.tenor.com/w3IfnSRjFN4AAAAC/party.gif',      label: 'Festa' },
-            { url: 'https://media.tenor.com/RxOZNBvPGngAAAAC/winning.gif',    label: 'Vitória' },
-            { url: 'https://media.tenor.com/eVCT6bSwPa4AAAAC/celebrate.gif',  label: 'Celebrar' },
-            { url: 'https://media.tenor.com/sbwuLhLiMcAAAAAC/happy.gif',      label: 'Feliz' },
-            { url: 'https://media.tenor.com/lXiDyvMRUjQAAAAC/excited.gif',    label: 'Animado' }
+            { url: 'https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif',    label: 'Dança' },
+            { url: 'https://media.giphy.com/media/xUPGcguWZHRC49irss/giphy.gif',   label: 'Festa' },
+            { url: 'https://media.giphy.com/media/3o7abBPhHHubOzZs28/giphy.gif',   label: 'Vitória' },
+            { url: 'https://media.giphy.com/media/artj92V8o75VPL7AeQ/giphy.gif',   label: 'Celebrar' },
+            { url: 'https://media.giphy.com/media/3oEjI789af0AVurF60/giphy.gif',   label: 'Feliz' },
+            { url: 'https://media.giphy.com/media/5GoVLqeAOie9jQBen7/giphy.gif',   label: 'Animado' }
         ]},
         { label: '👋 Saudação', id: 'saudacao', gifs: [
-            { url: 'https://media.tenor.com/mGxaGMBsyugAAAAC/hi.gif',         label: 'Oi' },
-            { url: 'https://media.tenor.com/GwQp5mTqH4MAAAAC/bye.gif',        label: 'Tchau' },
-            { url: 'https://media.tenor.com/I1-lfClMCqIAAAAC/goodmorning.gif',label: 'Bom dia' },
-            { url: 'https://media.tenor.com/w0dV43RyCc4AAAAC/goodnight.gif',  label: 'Boa noite' },
-            { url: 'https://media.tenor.com/OcA3fwGivz4AAAAC/welcome.gif',    label: 'Bem-vindo' },
-            { url: 'https://media.tenor.com/1pXbV4bSmqcAAAAC/wave.gif',       label: 'Aceno' }
+            { url: 'https://media.giphy.com/media/3oEjHAUOqG3lSS0f1C/giphy.gif',   label: 'Oi' },
+            { url: 'https://media.giphy.com/media/l0MYzv4jkRfmJR4sE/giphy.gif',   label: 'Tchau' },
+            { url: 'https://media.giphy.com/media/3oEjHnbgEJOOT4LCSU/giphy.gif',  label: 'Bom dia' },
+            { url: 'https://media.giphy.com/media/xUOrvVrImGvNe/giphy.gif',       label: 'Boa noite' },
+            { url: 'https://media.giphy.com/media/3o6Zt6ML6BklcajEsU/giphy.gif',  label: 'Bem-vindo' },
+            { url: 'https://media.giphy.com/media/QYWKPNjMzNh3sT4xGY/giphy.gif',  label: 'Aceno' }
         ]},
         { label: '❤️ Love',     id: 'love',     gifs: [
-            { url: 'https://media.tenor.com/0e_iyJq9NhUAAAAC/hearts.gif',     label: 'Corações' },
-            { url: 'https://media.tenor.com/JEkSQtoyHc4AAAAC/love.gif',       label: 'Love' },
-            { url: 'https://media.tenor.com/8dDkh5cPjroAAAAC/hug.gif',        label: 'Abraço' },
-            { url: 'https://media.tenor.com/4_e5DOCpFpkAAAAC/kiss.gif',       label: 'Beijo' },
-            { url: 'https://media.tenor.com/3bQqJ7QoOqkAAAAC/adorable.gif',   label: 'Fofo' },
-            { url: 'https://media.tenor.com/JrMJkZf7e1UAAAAC/cutecat.gif',    label: 'Gatinho' }
+            { url: 'https://media.giphy.com/media/l0MYzdXqnprgq4Lby/giphy.gif',   label: 'Corações' },
+            { url: 'https://media.giphy.com/media/3o6Zt6ML6BklcajEsU/giphy.gif',  label: 'Love' },
+            { url: 'https://media.giphy.com/media/od0qFVDJiJGcU/giphy.gif',       label: 'Abraço' },
+            { url: 'https://media.giphy.com/media/xT4uQhzQ2RA2j9JFHi/giphy.gif',  label: 'Beijo' },
+            { url: 'https://media.giphy.com/media/3oEjHU2msImBHpFoqs/giphy.gif',  label: 'Fofo' },
+            { url: 'https://media.giphy.com/media/ICOgUNjpvO0eAzon5b/giphy.gif',  label: 'Gatinho' }
         ]},
         { label: '😮 Surpresa', id: 'surpresa', gifs: [
-            { url: 'https://media.tenor.com/rTFWOQ5QBTIAAAAC/wow.gif',        label: 'Wow' },
-            { url: 'https://media.tenor.com/t5Cj5OPbm-MAAAAC/omg.gif',       label: 'OMG' },
-            { url: 'https://media.tenor.com/V5dkVL3bV1YAAAAC/shocked.gif',   label: 'Chocado' },
-            { url: 'https://media.tenor.com/qSWabKF2EMYAAAAC/whatdafaq.gif', label: 'What?!' },
-            { url: 'https://media.tenor.com/Pyd38RM2NxsAAAAC/nooo.gif',      label: 'Noooo' },
-            { url: 'https://media.tenor.com/c8dOr75bYlgAAAAC/seriously.gif', label: 'Sério?' }
+            { url: 'https://media.giphy.com/media/12NsCGnTKf3Zyn/giphy.gif',      label: 'Wow' },
+            { url: 'https://media.giphy.com/media/3oFyJLyhTSuQEiK5OU/giphy.gif', label: 'OMG' },
+            { url: 'https://media.giphy.com/media/5VIDEHmWnFXG4/giphy.gif',      label: 'Chocado' },
+            { url: 'https://media.giphy.com/media/hEc4k5pN17GZq/giphy.gif',      label: 'What?!' },
+            { url: 'https://media.giphy.com/media/3oFzlXAgLEp9xEL0Da/giphy.gif', label: 'Noooo' },
+            { url: 'https://media.giphy.com/media/xUOwGhOrBioLpbHLjy/giphy.gif', label: 'Sério?' }
         ]}
     ];
 
@@ -931,7 +941,7 @@ class EmojiGifPicker {
         const gifs = cat?.gifs ?? [];
         const body = this.#panel.querySelector('#egpBody');
         body.innerHTML = `<div class="egp-gif-grid">${
-            gifs.map(g => `<button class="egp-gif-item" title="${g.label}"><img loading="lazy" src="${g.url}" alt="${g.label}"></button>`).join('')
+            gifs.map(g => `<button class="egp-gif-item" title="${g.label}"><img loading="lazy" src="${g.url}" alt="${g.label}" onerror="this.closest('.egp-gif-item').style.display='none'"></button>`).join('')
         }</div>`;
         body.querySelectorAll('.egp-gif-item').forEach((b, i) => {
             b.addEventListener('click', () => this.#pickGif(gifs[i]));
@@ -3062,8 +3072,8 @@ class ChatApp {
     #startCallVibration() {
         if (!('vibrate' in navigator)) return;
         const pattern = [500, 300, 500, 300];
-        navigator.vibrate(pattern);
-        this.#ringVibrateTimer = setInterval(() => navigator.vibrate(pattern), 1600);
+        try { navigator.vibrate(pattern); } catch { /* bloqueado antes de interação */ }
+        this.#ringVibrateTimer = setInterval(() => { try { navigator.vibrate(pattern); } catch { /* ignore */ } }, 1600);
     }
 
     // Para o ringtone, a vibração e limpa o timer
@@ -3072,7 +3082,7 @@ class ChatApp {
         this.#ringTone.currentTime = 0;
         clearInterval(this.#ringVibrateTimer);
         this.#ringVibrateTimer = null;
-        navigator.vibrate?.(0);
+        try { navigator.vibrate?.(0); } catch { /* bloqueado antes de interação — seguro ignorar */ }
     }
 
     async #startCall(peer) {

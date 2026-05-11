@@ -82,7 +82,9 @@ service cloud.firestore {
                           && (chatId.matches(request.auth.uid + '_.*')
                               || chatId.matches('.*_' + request.auth.uid));
     }
-    match /p2pSignals/{chatId}/ice/{uid}/{candId} {
+    // Coleção plana de ICE candidates (3 segmentos válidos).
+    // Cada doc tem campo fromUid para filtrar por participante.
+    match /p2pSignals/{chatId}/ice/{candId} {
       allow read, write : if request.auth != null
                           && (chatId.matches(request.auth.uid + '_.*')
                               || chatId.matches('.*_' + request.auth.uid));
