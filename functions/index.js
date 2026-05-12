@@ -147,9 +147,9 @@ async function enviarParaTodos({ titulo, corpo, concurso, maxPontos }) {
     }, 'Lotofácil Push');
 }
 
-// ── Scheduler principal — 21h40 BRT ──────────────────────────
+// ── Scheduler principal — 00h20 BRT (TESTE) ─────────────────────
 exports.checkLotofacilResult = onSchedule(
-    { schedule: '40 21 * * *', timeZone: 'America/Sao_Paulo', retryCount: 2 },
+    { schedule: '20 00 * * *', timeZone: 'America/Sao_Paulo', retryCount: 2 },
     async () => { await _verificarEEnviar(false); }
 );
 
