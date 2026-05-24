@@ -314,7 +314,8 @@ function gerarConcursosTeimosinha() {
             concursos.push({
                 data: dataFormatada,
                 concurso: concursoAtual,
-                dia: diaTexto
+                dia: diaTexto,
+                dateMs: new Date(dataAtual).setHours(21, 0, 0, 0) // resultado disponível ~21h
             });
 
             concursoAtual++;
@@ -354,8 +355,13 @@ btnBuscarResultado.addEventListener('click', async () => {
         let concursosEncontrados = 0;
         let ultimoConcursoReal = null;
 
-        // Buscar todos os concursos desde o 3586
+        // Buscar todos os concursos realizados (data já passou)
         for (const concursoInfo of concursosTeimosinha) {
+            // Concurso futuro — pular sem chamar a API
+            if (concursoInfo.dateMs > Date.now()) {
+                console.log(`⏳ Concurso ${concursoInfo.concurso} (${concursoInfo.data}) ainda não realizado — aguardando`);
+                continue;
+            }
             try {
                 console.log(`📊 Buscando concurso ${concursoInfo.concurso} (${concursoInfo.data} - ${concursoInfo.dia})`);
                 
@@ -379,8 +385,7 @@ btnBuscarResultado.addEventListener('click', async () => {
                         console.log(`⚠️ Concurso ${concursoInfo.concurso} sem números sorteados`);
                     }
                 } else {
-                    // Concurso ainda não realizado (futuro) — continuar iterando
-                    console.log(`⏳ Concurso ${concursoInfo.concurso} ainda não realizado (status: ${response.status})`);
+                    console.log(`⚠️ Concurso ${concursoInfo.concurso} — resposta inesperada (status: ${response.status})`);
                 }
             } catch (error) {
                 console.log(`⚠️ Erro ao buscar concurso ${concursoInfo.concurso}:`, error.message);
