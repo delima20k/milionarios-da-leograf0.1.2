@@ -612,12 +612,7 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
-    <script type="module" src="chat.js?v=17"></script>
-    <!-- Input global de arquivo para o sistema de mídia -->
-    <input type="file" id="mediaFileInput" style="display:none" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar">
-
-    <!-- 💬 Botão flutuante de chat -->
+    <!-- 💬 Botão flutuante de chat — deve vir ANTES de script.js -->
     <button id="btnChatFloat" class="btn-chat-float" title="Abrir Chat" aria-label="Abrir Chat dos Milionários">
         <!-- Ícone carta — estado padrão (home) -->
         <svg class="btn-chat-float__icon btn-chat-float__icon--msg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="26" height="26">
@@ -629,6 +624,11 @@
         </svg>
         <span class="btn-chat-float__dot" id="chatFloatDot" aria-hidden="true"></span>
     </button>
+
+    <script src="script.js"></script>
+    <script type="module" src="chat.js?v=17"></script>
+    <!-- Input global de arquivo para o sistema de mídia -->
+    <input type="file" id="mediaFileInput" style="display:none" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar">
     <script>
         // Limpar SWs antigos com escopo errado e registrar o correto
         if ('serviceWorker' in navigator) {
