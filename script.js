@@ -265,7 +265,7 @@ const ModalParabens = (function() {
 // BUSCAR RESULTADO DA LOTOFÁCIL
 // ============================================
 
-// Jogos do bolão - 13 jogos (Teimosinha 24x a partir de 22/04/2026)
+// Jogos do bolão - 14 jogos (Teimosinha 24x a partir do Concurso 3692 — 22/05/2026)
 const jogos = [
     [1, 2, 3, 4, 5, 7, 11, 12, 14, 15, 17, 18, 21, 23, 25],
     [2, 4, 5, 6, 8, 9, 11, 12, 15, 17, 19, 20, 21, 22, 25],
@@ -279,22 +279,23 @@ const jogos = [
     [1, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13, 16, 17, 20, 21],
     [1, 2, 3, 5, 6, 7, 10, 11, 13, 14, 17, 18, 20, 21, 22],
     [2, 3, 4, 6, 9, 10, 13, 14, 17, 19, 20, 21, 22, 23, 25],
-    [2, 3, 4, 7, 9, 10, 11, 13, 14, 15, 17, 18, 20, 21, 25]
+    [2, 3, 4, 7, 9, 10, 11, 13, 14, 15, 17, 18, 20, 21, 25],
+    [2, 3, 5, 8, 9, 11, 12, 13, 15, 16, 18, 19, 21, 22, 24]
 ];
 
-// Mapeamento de concursos - DINÂMICO desde o 3668 até o atual
-// Teimosinha de 24 sorteios a partir de 22/04/2026
+// Mapeamento de concursos - DINÂMICO desde o 3692 até o 3715
+// Teimosinha de 24 sorteios a partir de 22/05/2026
 function gerarConcursosTeimosinha() {
     const concursos = [];
-    const dataInicio = new Date(2026, 3, 22); // 22/04/2026 - Concurso 3667 (Teimosinha 24x)
+    const dataInicio = new Date(2026, 4, 22); // 22/05/2026 - Concurso 3692 (Teimosinha 24x)
 
     // Feriados nacionais sem sorteio da Lotofácil (formato YYYY-M-D)
     const feriados = new Set([
-        '2026-5-1'  // Dia do Trabalho — sem sorteio
+        '2026-6-4'  // Corpus Christi — sem sorteio
     ]);
 
     // Gerar todos os 24 concursos da teimosinha independente da data atual
-    let concursoAtual = 3667;
+    let concursoAtual = 3692;
     let dataAtual = new Date(dataInicio);
 
     const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
@@ -323,8 +324,8 @@ function gerarConcursosTeimosinha() {
         dataAtual.setDate(dataAtual.getDate() + 1);
     }
 
-    console.log(`📅 Gerados ${concursos.length} concursos para verificação (do 3667 até ${concursoAtual - 1})`);
-    console.log(`📊 Teimosinha 24x iniciada em 22/04/2026 - 13 jogos por sorteio`);
+    console.log(`📅 Gerados ${concursos.length} concursos para verificação (do 3692 até ${concursoAtual - 1})`);
+    console.log(`📊 Teimosinha 24x iniciada em 22/05/2026 - 14 jogos por sorteio`);
     return concursos;
 }
 
@@ -340,13 +341,13 @@ let todosResultados = [];
 btnBuscarResultado.addEventListener('click', async () => {
     try {
         // Mostrar loading no botão
-        btnBuscarResultado.textContent = '⏳ Verificando do concurso 3586 até o atual...';
+        btnBuscarResultado.textContent = '⏳ Verificando do concurso 3692 até o atual...';
         btnBuscarResultado.disabled = true;
 
         // Limpar resultados anteriores
         todosResultados = [];
 
-        console.log('🔍 Iniciando busca COMPLETA desde o concurso 3586...');
+        console.log('🔍 Iniciando busca COMPLETA desde o concurso 3692...');
         console.log(`📊 Total de concursos a verificar: ${concursosTeimosinha.length}`);
         console.log(`📅 Período: ${concursosTeimosinha[0].data} (${concursosTeimosinha[0].concurso}) até ${concursosTeimosinha[concursosTeimosinha.length - 1].data} (${concursosTeimosinha[concursosTeimosinha.length - 1].concurso})`);
 
@@ -392,7 +393,7 @@ btnBuscarResultado.addEventListener('click', async () => {
         const pendentes = concursosTeimosinha.length - todosResultados.length;
         console.log(`📋 RESULTADO DA BUSCA:`);
         console.log(`   ✅ Sorteados: ${todosResultados.length} | ⏳ Pendentes: ${pendentes}`);
-        console.log(`   📊 Período verificado: Concurso 3667 até ${ultimoConcursoReal || 'atual'}`);
+        console.log(`   📊 Período verificado: Concurso 3692 até ${ultimoConcursoReal || 'atual'}`);
         console.log(`   📅 Datas: ${todosResultados.length > 0 ? `${todosResultados[0].data} até ${todosResultados[todosResultados.length - 1].data}` : 'Nenhuma'}`);
 
         if (todosResultados.length === 0) {
@@ -401,7 +402,7 @@ btnBuscarResultado.addEventListener('click', async () => {
             
             const confirm = window.confirm(
                 'Nenhum resultado oficial foi encontrado ainda.\n\n' +
-                '🎯 O sistema buscou desde o concurso 3525 (29/10/2025) até o atual\n\n' +
+                '🎯 O sistema buscou desde o concurso 3692 (22/05/2026) até o atual\n\n' +
                 'Deseja ver uma demonstração com dados simulados para testar o sistema?\n\n' +
                 '(Clique OK para ver a demonstração ou Cancelar para aguardar os resultados oficiais)'
             );
@@ -410,7 +411,7 @@ btnBuscarResultado.addEventListener('click', async () => {
                 todosResultados = criarDadosSimulados();
                 console.log('🎭 Usando dados simulados para demonstração');
             } else {
-                alert('⏳ Aguardando resultados oficiais dos concursos.\n\n📊 O sistema verificará automaticamente todos os concursos desde o 3525 quando estiverem disponíveis.');
+                alert('⏳ Aguardando resultados oficiais dos concursos.\n\n📊 O sistema verificará automaticamente todos os concursos desde o 3692 quando estiverem disponíveis.');
                 btnBuscarResultado.textContent = '🤖 Verificar Todos os Concursos da Teimosinha';
                 btnBuscarResultado.disabled = false;
                 return;

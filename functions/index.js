@@ -20,7 +20,7 @@ const APP_URL   = 'https://delima20k.github.io/milionarios-da-leograf0.1.2/';
 const API_URL   = 'https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil';
 const STATE_DOC = 'app_state/lotofacil_last';
 
-// ── 13 jogos do bolão (espelho fiel de script.js) ─────────────
+// ── 14 jogos do bolão (espelho fiel de script.js) ─────────────
 // ATENÇÃO: manter sincronizado com a constante `jogos` em script.js
 const JOGOS_BOLAO = [
     [ 1,  2,  3,  4,  5,  7, 11, 12, 14, 15, 17, 18, 21, 23, 25],
@@ -35,7 +35,8 @@ const JOGOS_BOLAO = [
     [ 1,  2,  3,  4,  5,  6,  7,  9, 11, 12, 13, 16, 17, 20, 21],
     [ 1,  2,  3,  5,  6,  7, 10, 11, 13, 14, 17, 18, 20, 21, 22],
     [ 2,  3,  4,  6,  9, 10, 13, 14, 17, 19, 20, 21, 22, 23, 25],
-    [ 2,  3,  4,  7,  9, 10, 11, 13, 14, 15, 17, 18, 20, 21, 25]
+    [ 2,  3,  4,  7,  9, 10, 11, 13, 14, 15, 17, 18, 20, 21, 25],
+    [ 2,  3,  5,  8,  9, 11, 12, 13, 15, 16, 18, 19, 21, 22, 24]
 ];
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -62,7 +63,7 @@ function _resolveTextoPush(data) {
     return data.text || '';
 }
 
-// Compara os 13 jogos do bolão contra as dezenas sorteadas.
+// Compara os 14 jogos do bolão contra as dezenas sorteadas.
 // Retorna { maxPontos, jogosPremiados: [{numeroJogo, totalAcertos}] }
 function calcularPontosBolao(listaDezenas) {
     const sorteadas = listaDezenas.map(n => parseInt(n, 10));
