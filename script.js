@@ -85,6 +85,12 @@ function abrirMenu() {
     sideMenu.style.pointerEvents = 'auto'; // força bypass do CSS cacheado
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
+    const btnFloat = document.getElementById('btnChatFloat');
+    if (btnFloat) {
+        btnFloat.classList.add('btn-chat-float--open');
+        btnFloat.title = 'Voltar';
+        btnFloat.setAttribute('aria-label', 'Fechar Chat');
+    }
 }
 
 // Função para fechar menu (libera scroll da página)
@@ -94,6 +100,12 @@ function fecharMenu() {
     sideMenu.style.pointerEvents = '';
     overlay.classList.remove('active');
     document.body.style.overflow = '';
+    const btnFloat = document.getElementById('btnChatFloat');
+    if (btnFloat) {
+        btnFloat.classList.remove('btn-chat-float--open');
+        btnFloat.title = 'Abrir Chat';
+        btnFloat.setAttribute('aria-label', 'Abrir Chat dos Milionários');
+    }
 }
 
 // Toggle do menu

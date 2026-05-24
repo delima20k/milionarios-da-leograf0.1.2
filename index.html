@@ -619,8 +619,13 @@
 
     <!-- 💬 Botão flutuante de chat -->
     <button id="btnChatFloat" class="btn-chat-float" title="Abrir Chat" aria-label="Abrir Chat dos Milionários">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="26" height="26">
+        <!-- Ícone carta — estado padrão (home) -->
+        <svg class="btn-chat-float__icon btn-chat-float__icon--msg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="26" height="26">
             <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+        </svg>
+        <!-- Ícone seta — estado chat aberto (voltar) -->
+        <svg class="btn-chat-float__icon btn-chat-float__icon--exit" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="26" height="26">
+            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
         </svg>
         <span class="btn-chat-float__dot" id="chatFloatDot" aria-hidden="true"></span>
     </button>
