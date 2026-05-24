@@ -2652,11 +2652,11 @@ class ChatApp {
         };
 
         if (chatType === 'group') {
-            await addDoc(collection(this.#db, 'groupMessages'), base).catch(console.error);
+            await addDoc(collection(this.#db, 'messages'), base).catch(console.error);
         } else if (chatType === 'private' && this.#privatePeer) {
             const ids    = [this.#currentUser.uid, this.#privatePeer.uid].sort();
             const chatId = ids.join('_');
-            const colRef = collection(this.#db, 'privateMessages', chatId, 'msgs');
+            const colRef = collection(this.#db, 'privateChats', chatId, 'messages');
             await addDoc(colRef, base).catch(console.error);
         }
     }
@@ -2704,11 +2704,11 @@ class ChatApp {
             status:    'sent'
         };
         if (chatType === 'group') {
-            await addDoc(collection(this.#db, 'groupMessages'), base).catch(console.error);
+            await addDoc(collection(this.#db, 'messages'), base).catch(console.error);
         } else if (chatType === 'private' && this.#privatePeer) {
             const ids    = [this.#currentUser.uid, this.#privatePeer.uid].sort();
             const chatId = ids.join('_');
-            await addDoc(collection(this.#db, 'privateMessages', chatId, 'msgs'), base).catch(console.error);
+            await addDoc(collection(this.#db, 'privateChats', chatId, 'messages'), base).catch(console.error);
         }
     }
 
@@ -2984,7 +2984,7 @@ class ChatApp {
                         : 'lotofacil-resultado';
                 const vibrate = data.chatType ? [200, 100, 200, 100, 400] : [300, 100, 300, 100, 600];
                 // Vibração direta — mais confiável em Android que a opção da notificação
-                if ('vibrate' in navigator) navigator.vibrate(vibrate);
+                if (_userHasInteracted && 'vibrate' in navigator) navigator.vibrate(vibrate);
                 swReg.showNotification(title, {
                     body, icon: './icon-192.png', badge: './icon-192.png',
                     tag, renotify: true, vibrate,
