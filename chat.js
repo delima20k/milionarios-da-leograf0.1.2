@@ -3319,10 +3319,13 @@ class ChatApp {
 
     // Padrão de vibração contínua enquanto o telefone toca (1 ciclo = 1600ms)
     #startCallVibration() {
-        if (!('vibrate' in navigator)) return;
+        if (!('vibrate' in navigator) || !_userHasInteracted) return;
         const pattern = [500, 300, 500, 300];
-        try { navigator.vibrate(pattern); } catch { /* bloqueado antes de interação */ }
-        this.#ringVibrateTimer = setInterval(() => { try { navigator.vibrate(pattern); } catch { /* ignore */ } }, 1600);
+        try { navigator.vibrate(pattern); } catch { /* ignore */ }
+        this.#ringVibrateTimer = setInterval(() => {
+            if (!_userHasInteracted) return;
+            try { navigator.vibrate(pattern); } catch { /* ignore */ }
+        }, 1600);
     }
 
     // Para o ringtone, a vibração e limpa o timer
@@ -3331,7 +3334,7 @@ class ChatApp {
         this.#ringTone.currentTime = 0;
         clearInterval(this.#ringVibrateTimer);
         this.#ringVibrateTimer = null;
-        try { navigator.vibrate?.(0); } catch { /* bloqueado antes de interação — seguro ignorar */ }
+        if (_userHasInteracted) try { navigator.vibrate?.(0); } catch { /* ignore */ }
     }
 
     async #startCall(peer) {
@@ -3664,6 +3667,12 @@ class ChatApp {
         });
     }
 }
+
+// Rastreia se o usuário já interagiu — necessário antes de navigator.vibrate()
+let _userHasInteracted = false;
+['click', 'keydown', 'touchstart', 'pointerdown'].forEach(ev =>
+    document.addEventListener(ev, () => { _userHasInteracted = true; }, { once: true, capture: true })
+);
 
 document.addEventListener('DOMContentLoaded', () => { new ChatApp(); });
 
