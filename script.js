@@ -109,6 +109,32 @@ hamburger.addEventListener('click', () => {
 overlay.addEventListener('click', fecharMenu);
 
 // ============================================
+// 💬 BOTÃO FLUTUANTE DE CHAT
+// ============================================
+(function () {
+    const btn = document.getElementById('btnChatFloat');
+    if (!btn) return;
+
+    // Abre/fecha o painel de chat
+    btn.addEventListener('click', () => {
+        if (sideMenu.classList.contains('active')) {
+            fecharMenu();
+        } else {
+            abrirMenu();
+        }
+    });
+
+    // Sincroniza o badge do botão com as badges de mensagens não lidas
+    function syncBadge() {
+        const hasUnread = !!document.querySelector('.chat-inbox-badge');
+        btn.classList.toggle('btn-chat-float--has-unread', hasUnread);
+    }
+
+    // Observa qualquer mudança no DOM para detectar badges entrando/saindo
+    new MutationObserver(syncBadge).observe(document.body, { childList: true, subtree: true });
+})();
+
+// ============================================
 // 📲 INSTALAR PWA - BOTÃO NO HEADER
 // ============================================
 (function() {

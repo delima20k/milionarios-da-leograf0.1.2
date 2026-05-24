@@ -1035,8 +1035,69 @@ body {
 }
 
 /* ========================================
-   🎉 MODAL PARABÉNS + CONFETTI
+   💬 BOTÃO FLUTUANTE DE CHAT
    ======================================== */
+.btn-chat-float {
+    position: fixed;
+    top: 72px;
+    right: 16px;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2ecc71, #1a8a4a);
+    color: #fff;
+    border: 3px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 99990;
+    box-shadow: 0 4px 15px rgba(46, 204, 113, 0.5);
+    transition: transform 0.2s, box-shadow 0.2s;
+    padding: 0;
+}
+
+.btn-chat-float:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(46, 204, 113, 0.7);
+}
+
+.btn-chat-float:active {
+    transform: scale(0.95);
+}
+
+/* Ponto vermelho de mensagens não lidas */
+.btn-chat-float__dot {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 14px;
+    height: 14px;
+    background: #e74c3c;
+    border-radius: 50%;
+    border: 2px solid #1a1a2e;
+    display: none;
+}
+
+/* Estado: tem mensagens não lidas */
+.btn-chat-float--has-unread {
+    animation: chatFloatPulse 1.4s ease-in-out infinite;
+}
+
+.btn-chat-float--has-unread .btn-chat-float__dot {
+    display: block;
+    animation: dotBlink 1.4s ease-in-out infinite;
+}
+
+@keyframes chatFloatPulse {
+    0%, 100% { border-color: transparent;  box-shadow: 0 4px 15px rgba(231, 76, 60, 0.35); }
+    50%       { border-color: #e74c3c;     box-shadow: 0 0 0 8px rgba(231, 76, 60, 0.15), 0 4px 18px rgba(231, 76, 60, 0.6); }
+}
+
+@keyframes dotBlink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+}
 .modal-parabens {
     position: fixed;
     inset: 0;
