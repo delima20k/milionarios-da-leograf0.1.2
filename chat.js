@@ -2043,15 +2043,18 @@ class ChatApp {
 
     // ── Group Messages ────────────────────────────────────
     #subscribeGroupMessages() {
-        const q    = query(collection(this.#db, 'messages'), orderBy('createdAt', 'asc'), limit(ChatApp.#PAGE));
+        // orderBy desc → janela sempre inclui as msgs mais recentes (fix real-time)
+        const q    = query(collection(this.#db, 'messages'), orderBy('createdAt', 'desc'), limit(ChatApp.#PAGE));
         const msgs = document.getElementById('chatGroupMessages');
         let first  = true;
         this.#unsubGrpMsgs = onSnapshot(q, snap => {
-            const frag = document.createDocumentFragment();
             const changes = snap.docChanges();
             let hasNew = false;
 
-            changes.forEach(c => {
+            // Primeiro snapshot chega em desc → inverter para renderizar na ordem cronológica
+            const batch = first ? [...changes].reverse() : changes;
+
+            batch.forEach(c => {
                 if (c.type === 'added') {
                     if (this.#confirmedIds.has(c.doc.id)) return;
                     const notify = !first;
@@ -2138,12 +2141,15 @@ class ChatApp {
     #subscribePrivateMessages(peerUid) {
         const chatId  = [this.#currentUser.uid, peerUid].sort().join('_');
         const colPath = 'privateChats/' + chatId + '/messages';
-        const q       = query(collection(this.#db, colPath), orderBy('createdAt', 'asc'), limit(ChatApp.#PAGE));
+        // orderBy desc → janela sempre inclui as msgs mais recentes (fix real-time)
+        const q       = query(collection(this.#db, colPath), orderBy('createdAt', 'desc'), limit(ChatApp.#PAGE));
         const msgs    = document.getElementById('chatPrivateMessages');
         let first     = true;
         this.#unsubPrivMsgs = onSnapshot(q, snap => {
             let hasNew = false;
-            snap.docChanges().forEach(c => {
+            // Primeiro snapshot chega em desc → inverter para renderizar na ordem cronológica
+            const batch = first ? [...snap.docChanges()].reverse() : snap.docChanges();
+            batch.forEach(c => {
                 if (c.type === 'added') {
                     const fid     = 'priv-' + c.doc.id;
                     const rawData = c.doc.data();
@@ -2177,6 +2183,7 @@ class ChatApp {
             if (hasNew) this.#scrollBottom(msgs);
         }, e => console.error('[Chat] Erro no listener privado:', e.message));
     }
+
 
     async #sendPrivateMessage() {
         if (!this.#privatePeer || !this.#currentUser) return;
