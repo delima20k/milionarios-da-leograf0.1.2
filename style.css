@@ -1052,6 +1052,7 @@ body {
     justify-content: center;
     cursor: pointer;
     z-index: 99990;
+    opacity: 0.75;
     box-shadow: 0 4px 15px rgba(46, 204, 113, 0.5);
     transition: transform 0.2s, box-shadow 0.2s;
     padding: 0;
@@ -1059,6 +1060,7 @@ body {
 
 .btn-chat-float:hover {
     transform: scale(1.1);
+    opacity: 1;
     box-shadow: 0 6px 20px rgba(46, 204, 113, 0.7);
 }
 
