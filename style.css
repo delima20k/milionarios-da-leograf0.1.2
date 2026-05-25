@@ -1039,7 +1039,7 @@ body {
    ======================================== */
 .btn-chat-float {
     position: fixed;
-    bottom: 1rem;
+    top: calc(72px + 0.5rem);
     right: 16px;
     width: 52px;
     height: 52px;
