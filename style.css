@@ -2681,10 +2681,14 @@ body {
 
 .botao-container {
     display: flex;
-    flex-direction: column;
-    gap: var(--espacamento-sm);
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5rem;
     margin: var(--espacamento-lg) 0;
 }
+
+/* Tooltip de boas-vindas ocupa linha inteira no flex */
+.botao-container .welcome-tooltip { flex-basis: 100%; }
 
 /* ========================================
    🎮 MENSAGEM DE BOAS-VINDAS (TOOLTIP)
@@ -2819,8 +2823,11 @@ body {
 */
 .btn-resultado {
     position: relative;
-    display: block;
-    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-width: min(150px, 100%);
     padding: var(--espacamento-md) var(--espacamento-lg);
     background: linear-gradient(
         180deg, 
@@ -2832,7 +2839,7 @@ body {
     font-weight: bold;
     text-decoration: none;
     text-align: center;
-    border-radius: var(--radius-full);
+    border-radius: 10px;
     border: none;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -2856,7 +2863,7 @@ body {
         rgba(255, 255, 255, 0.15) 0%,
         transparent 100%
     );
-    border-radius: var(--radius-full) var(--radius-full) 0 0;
+    border-radius: 10px 10px 0 0;
     pointer-events: none;
 }
 
@@ -2898,6 +2905,73 @@ body {
         0 3px 5px rgba(0, 0, 0, 0.3),
         inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
+
+/* ========================================
+   🗂️ SEÇÕES COLAPSÁVEIS
+   ======================================== */
+
+.sec-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    margin-bottom: 12px;
+}
+
+.sec-header > :first-child,
+.sec-header__info { flex: 1; min-width: 0; }
+
+.sec-toggle {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(46, 204, 113, 0.12);
+    border: 1px solid rgba(46, 204, 113, 0.25);
+    border-radius: 8px;
+    color: #2ecc71;
+    cursor: pointer;
+    transition: background 0.2s;
+    padding: 0;
+}
+
+.sec-toggle:hover { background: rgba(46, 204, 113, 0.25); }
+
+.sec-toggle .chevron-icon {
+    transition: transform 0.32s cubic-bezier(.4, 0, .2, 1);
+    transform: rotate(-90deg);
+}
+
+.sec-toggle[aria-expanded="true"] .chevron-icon {
+    transform: rotate(0deg);
+}
+
+.sec-body {
+    overflow: hidden;
+    max-height: 6000px;
+    opacity: 1;
+    transition: max-height 0.4s ease, opacity 0.28s ease;
+}
+
+.sec-body--closed {
+    max-height: 0 !important;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Títulos dentro do sec-header: sem margem inferior */
+.sec-header .jogos-title,
+.sec-header .calendario-title,
+.sec-header .teimosinha-botoes-title { margin-bottom: 0; text-align: left; }
+
+.sec-header .calendario-subtitle,
+.sec-header .teimosinha-botoes-subtitle { margin: 2px 0 0; text-align: left; }
 
 /* ========================================
    6. SEÇÃO JOGOS

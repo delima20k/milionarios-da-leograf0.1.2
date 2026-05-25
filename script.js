@@ -147,7 +147,32 @@ overlay.addEventListener('click', fecharMenu);
 })();
 
 // ============================================
-// 📲 INSTALAR PWA - BOTÃO NO HEADER
+// �️ SEÇÕES COLAPSÁVEIS
+// ============================================
+(function () {
+    function toggleSection(btn) {
+        const bodyId = btn.closest('[data-target]')?.dataset.target;
+        const body = bodyId ? document.getElementById(bodyId) : null;
+        if (!body) return;
+        const isOpen = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', String(!isOpen));
+        body.classList.toggle('sec-body--closed', isOpen);
+    }
+
+    document.querySelectorAll('.sec-toggle').forEach(btn => {
+        btn.addEventListener('click', e => { e.stopPropagation(); toggleSection(btn); });
+    });
+
+    document.querySelectorAll('.sec-header[data-target]').forEach(header => {
+        header.addEventListener('click', e => {
+            if (e.target.closest('.sec-toggle')) return;
+            toggleSection(header.querySelector('.sec-toggle'));
+        });
+    });
+})();
+
+// ============================================
+// �📲 INSTALAR PWA - BOTÃO NO HEADER
 // ============================================
 (function() {
     let deferredPrompt = null;
