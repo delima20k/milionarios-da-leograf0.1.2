@@ -72,8 +72,8 @@ _fcmMessaging.onBackgroundMessage(payload => {
 });
 // ─────────────────────────────────────────────────────────────────
 
-const STATIC_CACHE  = 'milionarios-static-v5.9';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v5.7';
+const STATIC_CACHE  = 'milionarios-static-v6.0';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v5.8';
 
 // Recursos essenciais para cache
 // Áudios (.mp3) removidos do cache: Range Requests (HTTP 206) são incompatíveis com cache.put()
@@ -90,7 +90,8 @@ const CORE_ASSETS = [
 
 // URLs da API que podem ser cacheadas
 const API_CACHE_URLS = [
-  /servicebus2\.caixa\.gov\.br\/portaldeloterias\/api\/lotofacil/
+  /servicebus2\.caixa\.gov\.br\/portaldeloterias\/api\/lotofacil/,
+  /servicebus2\.caixa\.gov\.br\/portaldeloterias\/api\/quina/
 ];
 
 // Domínios que NUNCA devem ser cacheados — Firebase Auth, Firestore, Storage, etc.

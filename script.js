@@ -66,6 +66,216 @@
 })();
 
 // ============================================
+// ============================================
+// ESPECIAL QUINA DE SAO JOAO
+// ============================================
+const QuinaSaoJoaoModal = (function() {
+    const STORAGE_KEY = 'quina_sao_joao_modal_viewed';
+    const TARGET_DATE = new Date('2026-06-27T21:35:00-03:00');
+    const CONCURSO = 7051;
+    const API_URL = `https://servicebus2.caixa.gov.br/portaldeloterias/api/quina/${CONCURSO}`;
+
+    const grupos = [
+        { titulo: 'Grupo 1 — 25 jogos Quina de São João', jogos: [[14,15,17,26,55],[14,15,17,26,28],[15,17,26,28,36],[17,26,28,36,79],[7,26,28,36,79],[7,13,28,36,79],[7,13,27,36,79],[7,13,27,29,79],[7,13,27,29,47],[13,27,29,47,53],[27,29,47,53,60],[29,47,53,60,70],[47,53,60,70,78],[53,55,60,70,78],[14,55,60,70,78],[14,15,55,70,78],[14,15,17,55,78],[14,15,17,26,55],[14,15,17,26,28],[15,17,26,28,36],[17,26,28,36,79],[7,26,28,36,79],[7,13,28,36,79],[7,13,27,36,79],[7,13,27,29,79]] },
+        { titulo: 'Grupo 2 — 10 jogos últimos 10 anos', jogos: [[4,26,44,49,52],[26,31,44,49,52],[29,31,44,49,52],[16,29,31,44,49],[16,29,31,49,56],[16,29,31,42,56],[16,29,39,42,56],[16,39,42,53,56],[5,39,42,53,56],[5,15,39,42,53]] },
+        { titulo: 'Grupo 3 — 10 jogos últimos 7 anos', jogos: [[4,26,44,49,52],[26,31,44,49,52],[29,31,44,49,52],[16,29,31,44,49],[16,29,31,44,56],[16,29,31,42,56],[16,29,39,42,56],[16,39,42,53,56],[5,39,42,53,56],[5,15,39,42,53]] },
+        { titulo: 'Grupo 4 — 10 jogos últimos 5 anos', jogos: [[4,26,44,49,52],[26,31,44,49,52],[29,31,44,49,52],[16,29,31,44,49],[16,29,31,44,56],[16,29,31,42,56],[16,29,39,42,56],[16,39,42,53,56],[5,39,42,53,56],[5,15,39,42,53]] },
+        { titulo: 'Grupo 5 — 10 jogos últimos 3 anos', jogos: [[4,16,26,29,31],[16,26,29,31,42],[26,29,31,42,44],[29,31,42,44,49],[31,42,44,49,52],[42,44,49,52,56],[39,44,49,52,56],[39,49,52,53,56],[5,39,52,53,56],[5,15,39,53,56]] },
+        { titulo: 'Grupo 6 — 10 jogos com 15 dezenas das imagens', jogos: [[5,6,7,15,16,21,42,43,49,52,53,57,64,72,75],[6,7,19,21,24,27,37,42,46,49,51,53,54,64,67],[7,9,10,11,14,16,19,21,22,31,49,50,53,54,55],[4,5,7,10,12,33,37,44,49,51,53,55,57,61,63],[1,4,7,10,14,17,21,22,25,33,39,41,44,45,60],[1,25,26,27,70,71,72,73,74,75,76,77,78,79,80],[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],[30,31,32,33,35,36,37,40,41,43,44,45,46,48,49],[8,9,46,47,54,56,57,58,59,61,62,63,64,65,66],[1,4,14,16,21,29,33,47,49,53,55,57,65,66,72]] }
+    ];
+
+    const jogos = grupos.flatMap((grupo, grupoIndex) =>
+        grupo.jogos.map((numeros, jogoIndex) => ({
+            grupo: grupo.titulo,
+            numero: grupos.slice(0, grupoIndex).reduce((total, g) => total + g.jogos.length, 0) + jogoIndex + 1,
+            numeros
+        }))
+    );
+
+    let modal;
+    let countdownEl;
+    let timerEl;
+    let resultBtn;
+    let resultBox;
+    let gamesEl;
+    let timerId = null;
+    let previousOverflow = '';
+
+    function sessionGet() {
+        try {
+            return sessionStorage.getItem(STORAGE_KEY);
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function sessionSet() {
+        try {
+            sessionStorage.setItem(STORAGE_KEY, '1');
+        } catch (error) {
+            // Se o navegador bloquear sessionStorage, a modal ainda deve fechar normalmente.
+        }
+    }
+
+    function pad(num) {
+        return String(num).padStart(2, '0');
+    }
+
+    function formatCurrency(value) {
+        return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function renderGames() {
+        if (!gamesEl) return;
+        let gameNumber = 1;
+        gamesEl.innerHTML = grupos.map(grupo => {
+            const cards = grupo.jogos.map(numeros => {
+                const html = numeros.map(num => `<span class="quina-ball">${pad(num)}</span>`).join('');
+                return `
+                    <article class="quina-card">
+                        <div class="quina-card__head">
+                            <strong>Jogo ${gameNumber++}</strong>
+                            <span>${numeros.length} dezenas</span>
+                        </div>
+                        <div class="quina-card__balls quina-card__balls--${numeros.length}">${html}</div>
+                    </article>
+                `;
+            }).join('');
+            return `<section class="quina-group"><h3>${grupo.titulo}</h3><div class="quina-group__grid">${cards}</div></section>`;
+        }).join('');
+    }
+
+    function updateCountdown() {
+        if (!countdownEl || !timerEl || !resultBtn) return;
+        const diff = TARGET_DATE.getTime() - Date.now();
+        if (diff <= 0) {
+            timerEl.classList.add('quina-modal__timer--hidden');
+            resultBtn.disabled = false;
+            resultBtn.textContent = 'Ver resultado da Quina de São João';
+            clearInterval(timerId);
+            timerId = null;
+            return;
+        }
+        const totalSeconds = Math.floor(diff / 1000);
+        const days = Math.floor(totalSeconds / 86400);
+        const hours = Math.floor((totalSeconds % 86400) / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        countdownEl.textContent = `${days}d ${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
+        resultBtn.disabled = true;
+        resultBtn.textContent = 'Resultado disponível em breve';
+    }
+
+    function open() {
+        if (!modal) return;
+        sessionSet();
+        previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        modal.classList.remove('quina-modal--hidden');
+        renderGames();
+        updateCountdown();
+        timerId = setInterval(updateCountdown, 1000);
+    }
+
+    function close() {
+        if (!modal) return;
+        modal.classList.add('quina-modal--hidden');
+        document.body.style.overflow = previousOverflow;
+        clearInterval(timerId);
+        timerId = null;
+    }
+
+    function waitForSplashThenOpen() {
+        const splash = document.getElementById('splashScreen');
+        if (!splash || splash.classList.contains('hidden')) {
+            open();
+            return;
+        }
+        const startedAt = Date.now();
+        const waiter = setInterval(() => {
+            if (splash.classList.contains('hidden') || Date.now() - startedAt > 11_000) {
+                clearInterval(waiter);
+                open();
+            }
+        }, 250);
+    }
+
+    function premioPorAcertos(rateios, acertos) {
+        const faixaPorAcertos = { 5: 1, 4: 2, 3: 3, 2: 4 };
+        const faixa = faixaPorAcertos[acertos];
+        if (!faixa) return 0;
+        return Number(rateios.find(item => item.faixa === faixa)?.valorPremio || 0);
+    }
+
+    function renderResultado(dados) {
+        const sorteadas = (dados.listaDezenas || []).map(Number);
+        const rateios = dados.listaRateioPremio || [];
+        const resultados = jogos.map(jogo => {
+            const acertos = jogo.numeros.filter(num => sorteadas.includes(num));
+            return { ...jogo, acertos, valorPremio: premioPorAcertos(rateios, acertos.length) };
+        });
+        const premiados = resultados.filter(jogo => jogo.acertos.length >= 2);
+        const maxAcertos = Math.max(0, ...resultados.map(jogo => jogo.acertos.length));
+        const total = premiados.reduce((soma, jogo) => soma + jogo.valorPremio, 0);
+
+        resultBox.innerHTML = `
+            <div class="quina-result quina-result--success">
+                <h3>Resultado da Quina de São João — Concurso ${dados.numero || CONCURSO}</h3>
+                <div class="quina-result__balls">${sorteadas.map(num => `<span class="quina-ball quina-ball--hit">${pad(num)}</span>`).join('')}</div>
+                <p>Maior pontuação: <strong>${maxAcertos} acerto(s)</strong></p>
+                <p>Jogos premiados: <strong>${premiados.length}</strong> · Total estimado: <strong>${formatCurrency(total)}</strong></p>
+                <div class="quina-result__list">
+                    ${resultados.map(jogo => `
+                        <div class="quina-result__item ${jogo.acertos.length >= 2 ? 'quina-result__item--win' : ''}">
+                            <span>Jogo ${jogo.numero}</span>
+                            <strong>${jogo.acertos.length} acerto(s)</strong>
+                            <small>${jogo.acertos.map(pad).join(' • ') || 'Sem acertos'}</small>
+                            ${jogo.valorPremio ? `<em>${formatCurrency(jogo.valorPremio)}</em>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    async function buscarResultado() {
+        resultBtn.disabled = true;
+        resultBtn.textContent = 'Buscando resultado...';
+        resultBox.innerHTML = '<div class="quina-result">Consultando resultado oficial da Caixa...</div>';
+        try {
+            const response = await fetch(API_URL);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const dados = await response.json();
+            if (Number(dados.numero) !== CONCURSO || !dados.listaDezenas?.length) {
+                throw new Error('Resultado oficial da Quina de São João ainda não disponível.');
+            }
+            renderResultado(dados);
+        } catch (error) {
+            resultBox.innerHTML = `<div class="quina-result quina-result--error">${error.message}</div>`;
+        } finally {
+            updateCountdown();
+        }
+    }
+
+    function init() {
+        modal = document.getElementById('quinaSaoJoaoModal');
+        countdownEl = document.getElementById('quinaSaoJoaoCountdown');
+        timerEl = document.getElementById('quinaSaoJoaoTimer');
+        resultBtn = document.getElementById('quinaSaoJoaoResult');
+        resultBox = document.getElementById('quinaSaoJoaoResultBox');
+        gamesEl = document.getElementById('quinaSaoJoaoGames');
+        if (!modal || !countdownEl || !timerEl || !resultBtn || !resultBox || !gamesEl) return;
+
+        document.getElementById('quinaSaoJoaoClose')?.addEventListener('click', close);
+        resultBtn.addEventListener('click', buscarResultado);
+        if (sessionGet() !== '1') waitForSplashThenOpen();
+    }
+
+    return { init };
+})();
+
+document.addEventListener('DOMContentLoaded', () => QuinaSaoJoaoModal.init());
+
 // MENU HAMBÚRGUER
 // ============================================
 

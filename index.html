@@ -636,6 +636,37 @@
     </div>
 
     <!-- 💬 Botão flutuante de chat — deve vir ANTES de script.js -->
+    <!-- ============================================
+         ESPECIAL QUINA DE SAO JOAO
+         ============================================ -->
+    <div id="quinaSaoJoaoModal" class="quina-modal quina-modal--hidden" role="dialog" aria-modal="true" aria-labelledby="quinaSaoJoaoTitle">
+        <div class="quina-modal__panel">
+            <div class="quina-modal__header">
+                <div>
+                    <p class="quina-modal__eyebrow">Bolao especial</p>
+                    <h2 id="quinaSaoJoaoTitle" class="quina-modal__title">🎉 Especial Quina de São João 🎉</h2>
+                </div>
+                <span class="quina-modal__count">75 jogos no total</span>
+            </div>
+
+            <div class="quina-modal__timer" id="quinaSaoJoaoTimer" aria-live="polite">
+                Resultado liberado em <strong id="quinaSaoJoaoCountdown">--d --h --m --s</strong>
+            </div>
+
+            <div class="quina-modal__actions">
+                <button type="button" class="quina-modal__btn quina-modal__btn--secondary" id="quinaSaoJoaoClose">
+                    Ver sorteios da Lotofácil
+                </button>
+                <button type="button" class="quina-modal__btn quina-modal__btn--primary" id="quinaSaoJoaoResult" disabled>
+                    Ver resultado da Quina de São João
+                </button>
+            </div>
+
+            <div class="quina-modal__result" id="quinaSaoJoaoResultBox" aria-live="polite"></div>
+            <div class="quina-modal__games" id="quinaSaoJoaoGames"></div>
+        </div>
+    </div>
+
     <button id="btnChatFloat" class="btn-chat-float" title="Abrir Chat" aria-label="Abrir Chat dos Milionários">
         <!-- Ícone carta — estado padrão (home) -->
         <svg class="btn-chat-float__icon btn-chat-float__icon--msg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="26" height="26">

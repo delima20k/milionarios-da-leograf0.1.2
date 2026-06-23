@@ -1116,6 +1116,253 @@ body {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0.3; }
 }
+
+.quina-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 120000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    background: rgba(7, 10, 20, 0.78);
+    backdrop-filter: blur(5px);
+}
+
+.quina-modal--hidden {
+    display: none;
+}
+
+.quina-modal__panel {
+    width: min(980px, 100%);
+    max-height: min(90dvh, 840px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: #101722;
+    color: #f8fbff;
+    border: 1px solid rgba(250, 204, 21, 0.42);
+    border-radius: 8px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    padding: 18px;
+}
+
+.quina-modal__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+
+.quina-modal__eyebrow {
+    margin: 0 0 4px;
+    color: #8bd3ff;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.quina-modal__title {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.15;
+    letter-spacing: 0;
+}
+
+.quina-modal__count {
+    flex: 0 0 auto;
+    color: #101722;
+    background: #facc15;
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.quina-modal__timer {
+    border: 1px solid rgba(139, 211, 255, 0.32);
+    background: rgba(139, 211, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    text-align: center;
+}
+
+.quina-modal__timer--hidden {
+    display: none;
+}
+
+.quina-modal__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.quina-modal__btn {
+    min-height: 46px;
+    border: 0;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.quina-modal__btn--secondary {
+    background: #f8fbff;
+    color: #101722;
+}
+
+.quina-modal__btn--primary {
+    background: #16a34a;
+    color: #fff;
+}
+
+.quina-modal__btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    background: #64748b;
+}
+
+.quina-modal__result {
+    margin-bottom: 14px;
+}
+
+.quina-group {
+    margin-top: 18px;
+}
+
+.quina-group h3 {
+    margin: 0 0 10px;
+    color: #facc15;
+    font-size: 16px;
+}
+
+.quina-group__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+
+.quina-card {
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.quina-card__head,
+.quina-result__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.quina-card__head {
+    margin-bottom: 10px;
+    color: #dbeafe;
+    font-size: 13px;
+}
+
+.quina-card__balls,
+.quina-result__balls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.quina-ball {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    background: #f8fbff;
+    color: #101722;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.quina-card__balls--15 .quina-ball {
+    width: 26px;
+    height: 26px;
+    font-size: 11px;
+}
+
+.quina-ball--hit {
+    background: #facc15;
+}
+
+.quina-result {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.07);
+    padding: 12px;
+}
+
+.quina-result--success {
+    border-color: rgba(34, 197, 94, 0.45);
+}
+
+.quina-result--error {
+    border-color: rgba(239, 68, 68, 0.55);
+    color: #fecaca;
+}
+
+.quina-result h3 {
+    margin: 0 0 10px;
+    font-size: 18px;
+}
+
+.quina-result__list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.quina-result__item {
+    align-items: flex-start;
+    background: rgba(15, 23, 42, 0.68);
+    border-radius: 8px;
+    padding: 10px;
+    flex-wrap: wrap;
+}
+
+.quina-result__item--win {
+    outline: 1px solid rgba(250, 204, 21, 0.48);
+}
+
+.quina-result__item small {
+    flex-basis: 100%;
+    color: #bfdbfe;
+}
+
+.quina-result__item em {
+    color: #facc15;
+    font-style: normal;
+    font-weight: 900;
+}
+
+@media (min-width: 680px) {
+    .quina-modal__panel {
+        padding: 22px;
+    }
+
+    .quina-modal__actions,
+    .quina-group__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 980px) {
+    .quina-group__grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
 .modal-parabens {
     position: fixed;
     inset: 0;
