@@ -72,8 +72,8 @@ _fcmMessaging.onBackgroundMessage(payload => {
 });
 // ─────────────────────────────────────────────────────────────────
 
-const STATIC_CACHE  = 'milionarios-static-v5.8';
-const DYNAMIC_CACHE = 'milionarios-dynamic-v5.6';
+const STATIC_CACHE  = 'milionarios-static-v5.9';
+const DYNAMIC_CACHE = 'milionarios-dynamic-v5.7';
 
 // Recursos essenciais para cache
 // Áudios (.mp3) removidos do cache: Range Requests (HTTP 206) são incompatíveis com cache.put()

@@ -400,6 +400,28 @@ const resultadoContainer = document.getElementById('resultadoContainer');
 const verificacaoContainer = document.getElementById('verificacaoContainer');
 
 let todosResultados = [];
+let ultimoConcursoOficialCache = null;
+
+async function obterUltimoConcursoOficial() {
+    if (ultimoConcursoOficialCache) return ultimoConcursoOficialCache;
+
+    try {
+        const response = await fetch('https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil');
+        if (!response.ok) return null;
+
+        const dados = await response.json();
+        if (!dados?.numero || !dados?.listaDezenas?.length) return null;
+
+        ultimoConcursoOficialCache = {
+            numero: Number(dados.numero),
+            data: dados.dataApuracao || ''
+        };
+        return ultimoConcursoOficialCache;
+    } catch (error) {
+        console.log('⚠️ Não foi possível consultar o último concurso oficial:', error.message);
+        return null;
+    }
+}
 
 btnBuscarResultado.addEventListener('click', async () => {
     try {
@@ -416,9 +438,19 @@ btnBuscarResultado.addEventListener('click', async () => {
 
         let concursosEncontrados = 0;
         let ultimoConcursoReal = null;
+        const ultimoOficial = await obterUltimoConcursoOficial();
+
+        if (ultimoOficial) {
+            console.log(`📌 Último concurso oficial disponível: ${ultimoOficial.numero} (${ultimoOficial.data})`);
+        }
 
         // Buscar todos os concursos desde o 3717
         for (const concursoInfo of concursosTeimosinha) {
+            if (ultimoOficial && concursoInfo.concurso > ultimoOficial.numero) {
+                console.log(`⏳ Concurso ${concursoInfo.concurso} ainda não é oficial — aguardando`);
+                continue;
+            }
+
             // Concurso futuro — pular sem chamar a API
             if (concursoInfo.dateMs > Date.now()) {
                 console.log(`⏳ Concurso ${concursoInfo.concurso} (${concursoInfo.data}) ainda não realizado — aguardando`);
@@ -464,25 +496,11 @@ btnBuscarResultado.addEventListener('click', async () => {
         console.log(`   📅 Datas: ${todosResultados.length > 0 ? `${todosResultados[0].data} até ${todosResultados[todosResultados.length - 1].data}` : 'Nenhuma'}`);
 
         if (todosResultados.length === 0) {
-            // Se não encontrou resultados reais, usar dados simulados para teste
-            console.log('⚠️ Nenhum resultado real encontrado. Oferecendo demonstração...');
-
-            const confirm = window.confirm(
-                'Nenhum resultado oficial foi encontrado ainda.\n\n' +
-                '🎯 O sistema buscou desde o concurso 3717 (22/06/2026) até o atual\n\n' +
-                'Deseja ver uma demonstração com dados simulados para testar o sistema?\n\n' +
-                '(Clique OK para ver a demonstração ou Cancelar para aguardar os resultados oficiais)'
-            );
-
-            if (confirm) {
-                todosResultados = criarDadosSimulados();
-                console.log('🎭 Usando dados simulados para demonstração');
-            } else {
-                alert('⏳ Aguardando resultados oficiais dos concursos.\n\n📊 O sistema verificará automaticamente todos os concursos desde o 3717 quando estiverem disponíveis.');
-                btnBuscarResultado.textContent = '🤖 Verificar Todos os Concursos da Teimosinha';
-                btnBuscarResultado.disabled = false;
-                return;
-            }
+            console.log('Nenhum resultado oficial encontrado para a teimosinha atual.');
+            alert('Aguardando resultados oficiais dos concursos.\n\nO sistema verificara automaticamente todos os concursos desde o 3717 quando estiverem disponiveis.');
+            btnBuscarResultado.textContent = 'Verificar Todos os Concursos da Teimosinha';
+            btnBuscarResultado.disabled = false;
+            return;
         }
 
         // Mostrar o último resultado no card principal
@@ -863,7 +881,7 @@ function verificarTodosJogos(resultados, pendentes = 0) {
             📅 ${primeiroResultado.data} até ${ultimoResultado.data} (${resultados.length} concursos)
         </div>
         <div style="color: #f39c12; font-size: 16px; margin-top: 8px; font-weight: bold;">
-            🎯 Soma de todos os 18 jogos em TODOS os sorteios
+            🎯 Soma de todos os 13 jogos em TODOS os sorteios
         </div>
     `;
     resumoPremios.appendChild(totalDiv);
@@ -1033,10 +1051,9 @@ function gerar24BotoesTeimosinha() {
         // Determinar se o concurso já passou
         const partes = teimosinha.data.split('/');
         const dataConcurso = new Date(partes[2], partes[1] - 1, partes[0]);
-        dataConcurso.setHours(0, 0, 0, 0);
+        dataConcurso.setHours(21, 0, 0, 0);
 
-        const jaPassou = dataConcurso <= dataAtual;
-        const isFuturo = dataConcurso > dataAtual;
+        const isFuturo = dataConcurso > new Date();
 
         if (isFuturo) {
             botaoElement.classList.add('futuro');
@@ -1098,6 +1115,21 @@ async function verificarConcursoTeimosinha(teimosinha) {
             console.log(`📋 Usando resultado em cache para concurso ${teimosinha.concurso}`);
             const resultadoCache = botoesTeimosinha.concursosVerificados.get(teimosinha.concurso);
             mostrarResultadoConcursoIndividual(resultadoCache);
+            return;
+        }
+
+        const ultimoOficial = await obterUltimoConcursoOficial();
+        if (ultimoOficial && teimosinha.concurso > ultimoOficial.numero) {
+            console.log(`Concurso ${teimosinha.concurso} ainda nao e oficial. Ultimo disponivel: ${ultimoOficial.numero}`);
+
+            if (botaoElement) {
+                const valorElement = botaoElement.querySelector('.teimosinha-valor');
+                const statusElement = botaoElement.querySelector('.teimosinha-status');
+
+                valorElement.textContent = 'Aguardando resultado oficial';
+                statusElement.textContent = 'Ainda nao sorteado';
+            }
+
             return;
         }
 
@@ -1188,7 +1220,7 @@ async function verificarJogosDoConursoTeimosinha(concursoResultado) {
     const jogosResultado = [];
     let totalConcurso = 0;
 
-    // Verificar cada um dos 18 jogos
+    // Verificar cada um dos 13 jogos
     jogos.forEach((jogo, indexJogo) => {
         const acertos = jogo.filter(num => concursoResultado.numerosSorteados.includes(num));
         const totalAcertos = acertos.length;
