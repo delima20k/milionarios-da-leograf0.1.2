@@ -141,7 +141,7 @@ const QuinaSaoJoaoModal = (function() {
                     </article>
                 `;
             }).join('');
-            return `<section class="quina-group"><h3>${grupo.titulo}</h3><div class="quina-group__grid">${cards}</div></section>`;
+            return `<section class="quina-group"><div class="quina-group__grid">${cards}</div></section>`;
         }).join('');
     }
 

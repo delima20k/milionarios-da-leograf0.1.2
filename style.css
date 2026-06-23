@@ -1171,12 +1171,15 @@ body {
 
 .quina-modal__count {
     flex: 0 0 auto;
+    max-width: 360px;
     color: #101722;
     background: #facc15;
     border-radius: 999px;
     padding: 8px 12px;
     font-size: 13px;
+    line-height: 1.25;
     font-weight: 900;
+    text-align: center;
 }
 
 .quina-modal__timer {
@@ -1360,6 +1363,17 @@ body {
 @media (min-width: 980px) {
     .quina-group__grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 520px) {
+    .quina-modal__header {
+        flex-direction: column;
+    }
+
+    .quina-modal__count {
+        width: 100%;
+        max-width: none;
     }
 }
 
