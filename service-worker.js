@@ -72,7 +72,7 @@ _fcmMessaging.onBackgroundMessage(payload => {
 });
 // ─────────────────────────────────────────────────────────────────
 
-const STATIC_CACHE  = 'milionarios-static-v5.9';
+const STATIC_CACHE  = 'milionarios-static-v5.10';
 const DYNAMIC_CACHE = 'milionarios-dynamic-v5.7';
 
 // Recursos essenciais para cache
