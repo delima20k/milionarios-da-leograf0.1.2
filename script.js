@@ -328,73 +328,73 @@ const ModalParabens = (function() {
 // BUSCAR RESULTADO DA LOTOFÁCIL
 // ============================================
 
-// Jogos do bolão - 14 jogos (Teimosinha 24x a partir de 20/07/2026)
+// Dados dos comprovantes: 15 jogos, 24 concursos, R$ 3,50 por jogo/concurso.
 const jogos = [
-    [2, 4, 5, 6, 8, 9, 11, 12, 15, 17, 19, 20, 21, 22, 25],
-    [1, 2, 4, 6, 9, 10, 11, 14, 15, 16, 17, 20, 22, 23, 25],
-    [1, 4, 5, 7, 9, 10, 11, 12, 15, 17, 18, 20, 21, 22, 25],
-    [1, 2, 4, 6, 8, 9, 11, 12, 15, 16, 17, 18, 20, 22, 23],
-    [1, 2, 3, 5, 6, 9, 11, 12, 14, 18, 19, 20, 21, 23, 24],
-    [1, 3, 4, 6, 8, 12, 13, 15, 16, 17, 19, 20, 21, 23, 24],
+    [2, 3, 5, 8, 9, 11, 12, 13, 15, 16, 18, 19, 21, 22, 24],
+    [2, 5, 7, 8, 9, 10, 11, 12, 14, 18, 20, 21, 22, 23, 24],
+    [2, 4, 5, 6, 9, 10, 12, 13, 14, 15, 16, 18, 20, 21, 23],
     [1, 2, 3, 4, 5, 6, 7, 9, 11, 13, 15, 17, 18, 19, 20],
     [1, 2, 3, 5, 7, 8, 9, 10, 11, 13, 15, 17, 18, 19, 21],
     [1, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13, 16, 17, 20, 21],
     [1, 2, 3, 5, 6, 7, 10, 11, 13, 14, 17, 18, 20, 21, 22],
     [2, 3, 4, 6, 9, 10, 13, 14, 17, 19, 20, 21, 22, 23, 25],
     [2, 3, 4, 7, 9, 10, 11, 13, 14, 15, 17, 18, 20, 21, 25],
-    [2, 3, 5, 8, 9, 11, 12, 13, 15, 16, 18, 19, 21, 22, 24],
-    [2, 5, 7, 8, 9, 10, 11, 12, 14, 18, 20, 21, 22, 23, 24]
+    [1, 2, 4, 6, 8, 9, 11, 12, 15, 16, 17, 18, 20, 22, 23],
+    [1, 2, 3, 5, 6, 9, 11, 12, 14, 18, 19, 20, 21, 23, 24],
+    [1, 3, 4, 6, 8, 12, 13, 15, 16, 17, 19, 20, 21, 23, 24],
+    [2, 4, 5, 6, 8, 9, 11, 12, 15, 17, 19, 20, 21, 22, 25],
+    [1, 2, 4, 6, 9, 10, 11, 14, 15, 16, 17, 20, 22, 23, 25],
+    [1, 4, 5, 7, 8, 10, 11, 12, 15, 17, 18, 20, 21, 22, 25]
 ];
+const totalConcursos = 24;
+const valorJogo = 3.50;
+const valorTotalAposta = jogos.length * totalConcursos * valorJogo;
 
-// Mapeamento de concursos - DINÂMICO
-// Teimosinha de 24 sorteios a partir de 20/07/2026
+// A pausa altera somente as datas, nunca a sequência dos concursos.
+// Datas posteriores ao especial são previstas (segunda a sábado).
 function gerarConcursosTeimosinha() {
     const concursos = [];
-    const dataInicio = new Date(2026, 6, 20); // 20/07/2026 - Concurso 3741 (Teimosinha 24x)
-
-    // Feriados nacionais sem sorteio da Lotofácil (formato YYYY-M-D)
-    const feriados = new Set([
-        '2026-6-4'  // Corpus Christi — sem sorteio
-    ]);
-
-    // Gerar todos os 24 concursos da teimosinha independente da data atual
-    let concursoAtual = 3741;
-    let dataAtual = new Date(dataInicio);
-
-    const diasSemana = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
-
-    // Gerar todos os 24 concursos da teimosinha
-    while (concursos.length < 24) {
-        const diaSemana = dataAtual.getDay();
-        const chaveData = `${dataAtual.getFullYear()}-${dataAtual.getMonth() + 1}-${dataAtual.getDate()}`;
-        const ehFeriado = feriados.has(chaveData);
-
-        // Lotofácil não tem sorteio aos domingos nem em feriados
-        if (diaSemana !== 0 && !ehFeriado) {
-            const dataFormatada = dataAtual.toLocaleDateString('pt-BR');
-            const diaTexto = diasSemana[diaSemana];
-
+    let data = new Date('2026-08-21T12:00:00Z');
+    while (concursos.length < totalConcursos) {
+        if (concursos.length === 12) data = new Date('2026-09-15T12:00:00Z');
+        if (data.getUTCDay() !== 0) {
+            const iso = data.toISOString().slice(0, 10);
+            const numero = concursos.length + 1;
             concursos.push({
-                data: dataFormatada,
-                concurso: concursoAtual,
-                dia: diaTexto,
-                dateMs: new Date(dataAtual).setHours(21, 0, 0, 0) // resultado disponível ~21h
+                numero,
+                concurso: 3767 + numero,
+                data: iso.split('-').reverse().join('/'),
+                dia: data.toLocaleDateString('pt-BR', { weekday: 'long', timeZone: 'UTC' }),
+                dateMs: Date.parse(`${iso}T21:00:00-03:00`),
+                especial: numero === 13,
+                prevista: numero > 13
             });
-
-            concursoAtual++;
         }
-
-        // Avançar para o próximo dia
-        dataAtual.setDate(dataAtual.getDate() + 1);
+        data.setUTCDate(data.getUTCDate() + 1);
     }
-
-    console.log(`📅 Gerados ${concursos.length} concursos para verificação (do 3741 até ${concursoAtual - 1})`);
-    console.log(`📊 Teimosinha 24x iniciada em 20/07/2026 - 14 jogos por sorteio`);
     return concursos;
 }
-
-// Gerar lista dinâmica de concursos
 const concursosTeimosinha = gerarConcursosTeimosinha();
+
+function atualizarResumoTeimosinha(agora = Date.now()) {
+    const realizados = concursosTeimosinha.filter(c => c.dateMs <= agora).length;
+    const emPausa = agora > concursosTeimosinha[11].dateMs && agora < Date.parse('2026-09-15T00:00:00-03:00');
+    document.getElementById('progressoTeimosinha').textContent =
+        `${realizados} de ${totalConcursos} concursos pelo calendário • ${totalConcursos - realizados} restantes` +
+        (emPausa ? ' • Em pausa: retorno em 15/09 no 13º concurso (3780).' : '');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelector('.valor-arrecadado').textContent = `Total dos comprovantes: ${valorTotalAposta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+    document.querySelector('.jogos-title').textContent = `JOGOS (${jogos.length} jogos)`;
+    document.getElementById('jogosBody').innerHTML = jogos.map((jogo, i) =>
+        `<h3 class="jogo-item">${String(i + 1).padStart(2, '0')}) ${jogo.map(n => String(n).padStart(2, '0')).join('-')}</h3>`).join('');
+    document.querySelector('.dias-lista').innerHTML = concursosTeimosinha.map(c =>
+        `${c.numero === 13 ? '<div class="dia-item">⏸ Pausa após 03/09 até 15/09: nenhum concurso perdido; a contagem continua.</div>' : ''}` +
+        `<div class="dia-item${c.numero === 24 ? ' destaque-final' : ''}">${c.numero}ª Teimosinha - ${c.dia}, ${c.data}${c.prevista ? ' (prevista)' : ''} (Concurso ${c.concurso})${c.especial ? ' — Lotofácil da Independência' : ''}${c.numero === 24 ? ' 🎉 ÚLTIMA!' : ''}</div>`).join('');
+    atualizarResumoTeimosinha();
+    setInterval(atualizarResumoTeimosinha, 60000);
+});
 
 const btnBuscarResultado = document.getElementById('btnBuscarResultado');
 const resultadoContainer = document.getElementById('resultadoContainer');
@@ -427,13 +427,13 @@ async function obterUltimoConcursoOficial() {
 btnBuscarResultado.addEventListener('click', async () => {
     try {
         // Mostrar loading no botão
-        btnBuscarResultado.textContent = '⏳ Verificando do concurso 3741 até o atual...';
+        btnBuscarResultado.textContent = '⏳ Verificando do concurso 3768 até o atual...';
         btnBuscarResultado.disabled = true;
 
         // Limpar resultados anteriores
         todosResultados = [];
 
-        console.log('🔍 Iniciando busca COMPLETA desde o concurso 3741...');
+        console.log('🔍 Iniciando busca COMPLETA desde o concurso 3768...');
         console.log(`📊 Total de concursos a verificar: ${concursosTeimosinha.length}`);
         console.log(`📅 Período: ${concursosTeimosinha[0].data} (${concursosTeimosinha[0].concurso}) até ${concursosTeimosinha[concursosTeimosinha.length - 1].data} (${concursosTeimosinha[concursosTeimosinha.length - 1].concurso})`);
 
@@ -445,7 +445,7 @@ btnBuscarResultado.addEventListener('click', async () => {
             console.log(`📌 Último concurso oficial disponível: ${ultimoOficial.numero} (${ultimoOficial.data})`);
         }
 
-        // Buscar todos os concursos desde o 3741
+        // Buscar todos os concursos desde o 3768
         for (const concursoInfo of concursosTeimosinha) {
             if (ultimoOficial && concursoInfo.concurso > ultimoOficial.numero) {
                 console.log(`⏳ Concurso ${concursoInfo.concurso} ainda não é oficial — aguardando`);
@@ -493,12 +493,12 @@ btnBuscarResultado.addEventListener('click', async () => {
         const pendentes = concursosTeimosinha.length - todosResultados.length;
         console.log(`📋 RESULTADO DA BUSCA:`);
         console.log(`   ✅ Sorteados: ${todosResultados.length} | ⏳ Pendentes: ${pendentes}`);
-        console.log(`   📊 Período verificado: Concurso 3741 até ${ultimoConcursoReal || 'atual'}`);
+        console.log(`   📊 Período verificado: Concurso 3768 até ${ultimoConcursoReal || 'atual'}`);
         console.log(`   📅 Datas: ${todosResultados.length > 0 ? `${todosResultados[0].data} até ${todosResultados[todosResultados.length - 1].data}` : 'Nenhuma'}`);
 
         if (todosResultados.length === 0) {
             console.log('Nenhum resultado oficial encontrado para a teimosinha atual.');
-            alert('Aguardando resultados oficiais dos concursos.\n\nO sistema verificara automaticamente todos os concursos desde o 3741 quando estiverem disponiveis.');
+            alert('Aguardando resultados oficiais dos concursos.\n\nO sistema verificara automaticamente todos os concursos desde o 3768 quando estiverem disponiveis.');
             btnBuscarResultado.textContent = 'Verificar Todos os Concursos da Teimosinha';
             btnBuscarResultado.disabled = false;
             return;
@@ -882,7 +882,7 @@ function verificarTodosJogos(resultados, pendentes = 0) {
             📅 ${primeiroResultado.data} até ${ultimoResultado.data} (${resultados.length} concursos)
         </div>
         <div style="color: #f39c12; font-size: 16px; margin-top: 8px; font-weight: bold;">
-            🎯 Soma de todos os 14 jogos em TODOS os sorteios
+            🎯 Soma de todos os 15 jogos em TODOS os sorteios
         </div>
     `;
     resumoPremios.appendChild(totalDiv);
@@ -896,7 +896,7 @@ function verificarTodosJogos(resultados, pendentes = 0) {
 // ============================================
 function criarDadosSimulados() {
     console.log('🎭 Criando dados simulados para demonstração...');
-    console.log('📋 Teimosinha 24x a partir de 13/01/2026 (concurso 3586)');
+    console.log('📋 Teimosinha 24x a partir de 21/08/2026 (concurso 3768)');
 
     const dadosSimulados = [
         {
@@ -992,33 +992,8 @@ let botoesTeimosinha = {
     contadorVerificados: 0
 };
 
-// Lista fixa dos 24 concursos da teimosinha (20/07/2026 a partir do concurso 3741)
-const teimosinhaConcursos = [
-    { numero: 1, data: '20/07/2026', dia: 'Segunda-feira', concurso: 3741 },
-    { numero: 2, data: '21/07/2026', dia: 'Terça-feira', concurso: 3742 },
-    { numero: 3, data: '22/07/2026', dia: 'Quarta-feira', concurso: 3743 },
-    { numero: 4, data: '23/07/2026', dia: 'Quinta-feira', concurso: 3744 },
-    { numero: 5, data: '24/07/2026', dia: 'Sexta-feira', concurso: 3745 },
-    { numero: 6, data: '25/07/2026', dia: 'Sábado', concurso: 3746 },
-    { numero: 7, data: '27/07/2026', dia: 'Segunda-feira', concurso: 3747 },
-    { numero: 8, data: '28/07/2026', dia: 'Terça-feira', concurso: 3748 },
-    { numero: 9, data: '29/07/2026', dia: 'Quarta-feira', concurso: 3749 },
-    { numero: 10, data: '30/07/2026', dia: 'Quinta-feira', concurso: 3750 },
-    { numero: 11, data: '31/07/2026', dia: 'Sexta-feira', concurso: 3751 },
-    { numero: 12, data: '01/08/2026', dia: 'Sábado', concurso: 3752 },
-    { numero: 13, data: '03/08/2026', dia: 'Segunda-feira', concurso: 3753 },
-    { numero: 14, data: '04/08/2026', dia: 'Terça-feira', concurso: 3754 },
-    { numero: 15, data: '05/08/2026', dia: 'Quarta-feira', concurso: 3755 },
-    { numero: 16, data: '06/08/2026', dia: 'Quinta-feira', concurso: 3756 },
-    { numero: 17, data: '07/08/2026', dia: 'Sexta-feira', concurso: 3757 },
-    { numero: 18, data: '08/08/2026', dia: 'Sábado', concurso: 3758 },
-    { numero: 19, data: '10/08/2026', dia: 'Segunda-feira', concurso: 3759 },
-    { numero: 20, data: '11/08/2026', dia: 'Terça-feira', concurso: 3760 },
-    { numero: 21, data: '12/08/2026', dia: 'Quarta-feira', concurso: 3761 },
-    { numero: 22, data: '13/08/2026', dia: 'Quinta-feira', concurso: 3762 },
-    { numero: 23, data: '14/08/2026', dia: 'Sexta-feira', concurso: 3763 },
-    { numero: 24, data: '15/08/2026', dia: 'Sábado', concurso: 3764 }
-];
+// Mesma sequência usada pela análise e pelo calendário.
+const teimosinhaConcursos = concursosTeimosinha;
 
 // Inicializar os 24 botões quando a página carregar
 document.addEventListener('DOMContentLoaded', () => {
@@ -1039,22 +1014,13 @@ function gerar24BotoesTeimosinha() {
 
     botoesContainer.innerHTML = '';
 
-    // Data atual para comparação (usar data do sistema)
-    const dataAtual = new Date();
-    dataAtual.setHours(0, 0, 0, 0);
-
     teimosinhaConcursos.forEach((teimosinha) => {
         const botaoElement = document.createElement('div');
         botaoElement.className = 'botao-teimosinha nao-verificado';
         botaoElement.setAttribute('data-concurso', teimosinha.concurso);
         botaoElement.setAttribute('data-numero', teimosinha.numero);
 
-        // Determinar se o concurso já passou
-        const partes = teimosinha.data.split('/');
-        const dataConcurso = new Date(partes[2], partes[1] - 1, partes[0]);
-        dataConcurso.setHours(21, 0, 0, 0);
-
-        const isFuturo = dataConcurso > new Date();
+        const isFuturo = teimosinha.dateMs > Date.now();
 
         if (isFuturo) {
             botaoElement.classList.add('futuro');
@@ -1062,9 +1028,9 @@ function gerar24BotoesTeimosinha() {
 
         botaoElement.innerHTML = `
             <div class="teimosinha-numero">${teimosinha.numero}ª Teimosinha</div>
-            <div class="teimosinha-data">${teimosinha.data}</div>
+            <div class="teimosinha-data">${teimosinha.data}${teimosinha.prevista ? ' (prevista)' : ''}</div>
             <div class="teimosinha-dia">${teimosinha.dia}</div>
-            <div class="teimosinha-concurso">Concurso ${teimosinha.concurso}</div>
+            <div class="teimosinha-concurso">Concurso ${teimosinha.concurso}${teimosinha.especial ? ' — Lotofácil da Independência' : ''}</div>
             <div class="teimosinha-status ${isFuturo ? 'status-futuro' : 'status-nao-sorteado'}">
                 ${isFuturo ? '⏳ Futuro' : '🎲 Clique para verificar'}
             </div>
@@ -1221,7 +1187,7 @@ async function verificarJogosDoConursoTeimosinha(concursoResultado) {
     const jogosResultado = [];
     let totalConcurso = 0;
 
-    // Verificar cada um dos 14 jogos
+    // Verificar cada um dos 15 jogos
     jogos.forEach((jogo, indexJogo) => {
         const acertos = jogo.filter(num => concursoResultado.numerosSorteados.includes(num));
         const totalAcertos = acertos.length;
