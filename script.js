@@ -509,7 +509,7 @@ btnBuscarResultado.addEventListener('click', async () => {
         mostrarResultadoPrincipal(ultimoResultado);
 
         // Verificar todos os jogos em todos os concursos
-        verificarTodosJogos(todosResultados, pendentes);
+        await verificarTodosJogos(todosResultados, pendentes);
 
         // Scroll suave até o resultado
         resultadoContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -568,7 +568,7 @@ function mostrarResultadoPrincipal(resultado) {
 }
 
 // Função para verificar todos os jogos em todos os concursos
-function verificarTodosJogos(resultados, pendentes = 0) {
+async function verificarTodosJogos(resultados, pendentes = 0) {
     console.log('🎯 Iniciando verificação de todos os jogos...');
 
     const resumoPremios = document.getElementById('resumoPremios');
@@ -756,6 +756,11 @@ function verificarTodosJogos(resultados, pendentes = 0) {
         // Só adicionar seção se teve pelo menos 1 jogo com prêmio ou mostrar que não teve
         jogosVerificados.appendChild(concursoSection);
     });
+
+    for (const resultado of resultados) {
+        const concurso = concursosTeimosinha.find(c => c.concurso === resultado.concurso);
+        if (concurso) registrarResultadoAcumulado(await verificarJogosDoConursoTeimosinha({ ...concurso, ...resultado }));
+    }
 
     console.log(`\n🏆 === RESUMO FINAL ===`);
     console.log(`💰 Total Geral Acumulado: R$ ${totalGeralAcumulado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
@@ -1081,6 +1086,7 @@ async function verificarConcursoTeimosinha(teimosinha) {
         if (botoesTeimosinha.concursosVerificados.has(teimosinha.concurso)) {
             console.log(`📋 Usando resultado em cache para concurso ${teimosinha.concurso}`);
             const resultadoCache = botoesTeimosinha.concursosVerificados.get(teimosinha.concurso);
+            atualizarBotaoVisual(botaoElement, resultadoCache);
             mostrarResultadoConcursoIndividual(resultadoCache);
             return;
         }
@@ -1127,13 +1133,7 @@ async function verificarConcursoTeimosinha(teimosinha) {
         // Verificar jogos e calcular prêmios
         const resultadoCompleto = await verificarJogosDoConursoTeimosinha(resultado);
 
-        // Salvar no cache
-        botoesTeimosinha.concursosVerificados.set(teimosinha.concurso, resultadoCompleto);
-
-        // Atualizar total acumulado
-        botoesTeimosinha.totalAcumulado += resultadoCompleto.totalConcurso;
-        botoesTeimosinha.contadorVerificados++;
-        atualizarTotalAcumuladoDisplay();
+        registrarResultadoAcumulado(resultadoCompleto);
 
         // Atualizar visual do botão
         atualizarBotaoVisual(botaoElement, resultadoCompleto);
@@ -1154,12 +1154,7 @@ async function verificarConcursoTeimosinha(teimosinha) {
 
             // Marcar como simulado
             resultadoCompleto.simulado = true;
-            botoesTeimosinha.concursosVerificados.set(teimosinha.concurso, resultadoCompleto);
-
-            // Atualizar total acumulado
-            botoesTeimosinha.totalAcumulado += resultadoCompleto.totalConcurso;
-            botoesTeimosinha.contadorVerificados++;
-            atualizarTotalAcumuladoDisplay();
+            registrarResultadoAcumulado(resultadoCompleto);
 
             // Atualizar visual do botão
             atualizarBotaoVisual(botaoElement, resultadoCompleto);
@@ -1276,8 +1271,42 @@ function atualizarBotaoVisual(botaoElement, resultado) {
     }
 }
 
+// A chave identifica esta aposta e a versão das dezenas dos comprovantes.
+const chaveTotalTeimosinha = 'teimosinha-3768-3791-15-jogos-v1';
+
+function registrarResultadoAcumulado(resultado) {
+    if (resultado.simulado || resultado.oficial === false) return;
+    if (!concursosTeimosinha.some(c => c.concurso === resultado.concurso)) return;
+    botoesTeimosinha.concursosVerificados.set(resultado.concurso, resultado);
+    atualizarTotalAcumuladoDisplay();
+    atualizarBotaoVisual(document.querySelector(`[data-concurso="${resultado.concurso}"]`), resultado);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        const salvos = JSON.parse(localStorage.getItem(chaveTotalTeimosinha) || '[]');
+        if (Array.isArray(salvos)) {
+            for (const resultado of salvos) {
+                if (Number.isFinite(resultado?.totalConcurso) && resultado.totalConcurso >= 0 && Array.isArray(resultado.jogosResultado)) {
+                    registrarResultadoAcumulado(resultado);
+                }
+            }
+        }
+    } catch (erro) {
+        console.warn('Não foi possível restaurar o total da Teimosinha:', erro);
+    }
+});
+
 // Atualizar display do total acumulado
 function atualizarTotalAcumuladoDisplay() {
+    const resultados = [...botoesTeimosinha.concursosVerificados.values()];
+    botoesTeimosinha.totalAcumulado = resultados.reduce((total, resultado) => total + Math.round(resultado.totalConcurso * 100), 0) / 100;
+    botoesTeimosinha.contadorVerificados = resultados.length;
+    try {
+        localStorage.setItem(chaveTotalTeimosinha, JSON.stringify(resultados));
+    } catch (erro) {
+        console.warn('Não foi possível salvar o total da Teimosinha:', erro);
+    }
     const totalElement = document.getElementById('totalAcumuladoBotoes');
     const contadorElement = document.getElementById('botoesVerificadosCount');
 
