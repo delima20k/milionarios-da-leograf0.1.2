@@ -350,38 +350,33 @@ const totalConcursos = 24;
 const valorJogo = 3.50;
 const valorTotalAposta = jogos.length * totalConcursos * valorJogo;
 
-// A pausa altera somente as datas, nunca a sequência dos concursos.
-// Datas posteriores ao especial são previstas (segunda a sábado).
+// Teimosinha 3805–3828. Datas oficiais da Caixa até o 3815 (o 3807 foi num domingo);
+// as seguintes são previstas (segunda a sábado).
+const primeiroConcurso = 3805;
+const datasOficiais = [
+    '2026-10-15', '2026-10-16', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21',
+    '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-26', '2026-10-27'
+];
 function gerarConcursosTeimosinha() {
-    const concursos = [];
-    let data = new Date('2026-08-21T12:00:00Z');
-    while (concursos.length < totalConcursos) {
-        if (concursos.length === 12) data = new Date('2026-09-15T12:00:00Z');
-        if (data.getUTCDay() !== 0) {
-            const iso = data.toISOString().slice(0, 10);
-            const numero = concursos.length + 1;
-            concursos.push({
-                numero,
-                concurso: 3767 + numero,
-                data: iso.split('-').reverse().join('/'),
-                dia: data.toLocaleDateString('pt-BR', { weekday: 'long', timeZone: 'UTC' }),
-                dateMs: Date.parse(`${iso}T21:00:00-03:00`),
-                especial: numero === 13,
-                prevista: numero > 13
-            });
-        }
-        data.setUTCDate(data.getUTCDate() + 1);
+    const datas = [...datasOficiais];
+    for (const data = new Date('2026-10-28T12:00:00Z'); datas.length < totalConcursos; data.setUTCDate(data.getUTCDate() + 1)) {
+        if (data.getUTCDay() !== 0) datas.push(data.toISOString().slice(0, 10));
     }
-    return concursos;
+    return datas.map((iso, i) => ({
+        numero: i + 1,
+        concurso: primeiroConcurso + i,
+        data: iso.split('-').reverse().join('/'),
+        dia: new Date(`${iso}T12:00:00Z`).toLocaleDateString('pt-BR', { weekday: 'long', timeZone: 'UTC' }),
+        dateMs: Date.parse(`${iso}T21:00:00-03:00`),
+        prevista: i >= datasOficiais.length
+    }));
 }
 const concursosTeimosinha = gerarConcursosTeimosinha();
 
 function atualizarResumoTeimosinha(agora = Date.now()) {
     const realizados = concursosTeimosinha.filter(c => c.dateMs <= agora).length;
-    const emPausa = agora > concursosTeimosinha[11].dateMs && agora < Date.parse('2026-09-15T00:00:00-03:00');
     document.getElementById('progressoTeimosinha').textContent =
-        `${realizados} de ${totalConcursos} concursos pelo calendário • ${totalConcursos - realizados} restantes` +
-        (emPausa ? ' • Em pausa: retorno em 15/09 no 13º concurso (3780).' : '');
+        `${realizados} de ${totalConcursos} concursos pelo calendário • ${totalConcursos - realizados} restantes`;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -390,8 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('jogosBody').innerHTML = jogos.map((jogo, i) =>
         `<h3 class="jogo-item">${String(i + 1).padStart(2, '0')}) ${jogo.map(n => String(n).padStart(2, '0')).join('-')}</h3>`).join('');
     document.querySelector('.dias-lista').innerHTML = concursosTeimosinha.map(c =>
-        `${c.numero === 13 ? '<div class="dia-item">⏸ Pausa após 03/09 até 15/09: nenhum concurso perdido; a contagem continua.</div>' : ''}` +
-        `<div class="dia-item${c.numero === 24 ? ' destaque-final' : ''}">${c.numero}ª Teimosinha - ${c.dia}, ${c.data}${c.prevista ? ' (prevista)' : ''} (Concurso ${c.concurso})${c.especial ? ' — Lotofácil da Independência' : ''}${c.numero === 24 ? ' 🎉 ÚLTIMA!' : ''}</div>`).join('');
+        `<div class="dia-item${c.numero === 24 ? ' destaque-final' : ''}">${c.numero}ª Teimosinha - ${c.dia}, ${c.data}${c.prevista ? ' (prevista)' : ''} (Concurso ${c.concurso})${c.numero === 24 ? ' 🎉 ÚLTIMA!' : ''}</div>`).join('');
     atualizarResumoTeimosinha();
     setInterval(atualizarResumoTeimosinha, 60000);
 });
@@ -427,13 +421,13 @@ async function obterUltimoConcursoOficial() {
 btnBuscarResultado.addEventListener('click', async () => {
     try {
         // Mostrar loading no botão
-        btnBuscarResultado.textContent = '⏳ Verificando do concurso 3768 até o atual...';
+        btnBuscarResultado.textContent = '⏳ Verificando do concurso 3805 até o atual...';
         btnBuscarResultado.disabled = true;
 
         // Limpar resultados anteriores
         todosResultados = [];
 
-        console.log('🔍 Iniciando busca COMPLETA desde o concurso 3768...');
+        console.log('🔍 Iniciando busca COMPLETA desde o concurso 3805...');
         console.log(`📊 Total de concursos a verificar: ${concursosTeimosinha.length}`);
         console.log(`📅 Período: ${concursosTeimosinha[0].data} (${concursosTeimosinha[0].concurso}) até ${concursosTeimosinha[concursosTeimosinha.length - 1].data} (${concursosTeimosinha[concursosTeimosinha.length - 1].concurso})`);
 
@@ -445,7 +439,7 @@ btnBuscarResultado.addEventListener('click', async () => {
             console.log(`📌 Último concurso oficial disponível: ${ultimoOficial.numero} (${ultimoOficial.data})`);
         }
 
-        // Buscar todos os concursos desde o 3768
+        // Buscar todos os concursos desde o 3805
         for (const concursoInfo of concursosTeimosinha) {
             if (ultimoOficial && concursoInfo.concurso > ultimoOficial.numero) {
                 console.log(`⏳ Concurso ${concursoInfo.concurso} ainda não é oficial — aguardando`);
@@ -493,12 +487,12 @@ btnBuscarResultado.addEventListener('click', async () => {
         const pendentes = concursosTeimosinha.length - todosResultados.length;
         console.log(`📋 RESULTADO DA BUSCA:`);
         console.log(`   ✅ Sorteados: ${todosResultados.length} | ⏳ Pendentes: ${pendentes}`);
-        console.log(`   📊 Período verificado: Concurso 3768 até ${ultimoConcursoReal || 'atual'}`);
+        console.log(`   📊 Período verificado: Concurso 3805 até ${ultimoConcursoReal || 'atual'}`);
         console.log(`   📅 Datas: ${todosResultados.length > 0 ? `${todosResultados[0].data} até ${todosResultados[todosResultados.length - 1].data}` : 'Nenhuma'}`);
 
         if (todosResultados.length === 0) {
             console.log('Nenhum resultado oficial encontrado para a teimosinha atual.');
-            alert('Aguardando resultados oficiais dos concursos.\n\nO sistema verificara automaticamente todos os concursos desde o 3768 quando estiverem disponiveis.');
+            alert('Aguardando resultados oficiais dos concursos.\n\nO sistema verificara automaticamente todos os concursos desde o 3805 quando estiverem disponiveis.');
             btnBuscarResultado.textContent = 'Verificar Todos os Concursos da Teimosinha';
             btnBuscarResultado.disabled = false;
             return;
@@ -901,7 +895,7 @@ async function verificarTodosJogos(resultados, pendentes = 0) {
 // ============================================
 function criarDadosSimulados() {
     console.log('🎭 Criando dados simulados para demonstração...');
-    console.log('📋 Teimosinha 24x a partir de 21/08/2026 (concurso 3768)');
+    console.log('📋 Teimosinha 24x a partir de 15/10/2026 (concurso 3805)');
 
     const dadosSimulados = [
         {
@@ -1035,7 +1029,7 @@ function gerar24BotoesTeimosinha() {
             <div class="teimosinha-numero">${teimosinha.numero}ª Teimosinha</div>
             <div class="teimosinha-data">${teimosinha.data}${teimosinha.prevista ? ' (prevista)' : ''}</div>
             <div class="teimosinha-dia">${teimosinha.dia}</div>
-            <div class="teimosinha-concurso">Concurso ${teimosinha.concurso}${teimosinha.especial ? ' — Lotofácil da Independência' : ''}</div>
+            <div class="teimosinha-concurso">Concurso ${teimosinha.concurso}</div>
             <div class="teimosinha-status ${isFuturo ? 'status-futuro' : 'status-nao-sorteado'}">
                 ${isFuturo ? '⏳ Futuro' : '🎲 Clique para verificar'}
             </div>
@@ -1272,7 +1266,7 @@ function atualizarBotaoVisual(botaoElement, resultado) {
 }
 
 // A chave identifica esta aposta e a versão das dezenas dos comprovantes.
-const chaveTotalTeimosinha = 'teimosinha-3768-3791-15-jogos-v1';
+const chaveTotalTeimosinha = 'teimosinha-3805-3828-15-jogos-v1';
 
 function registrarResultadoAcumulado(resultado) {
     if (resultado.simulado || resultado.oficial === false) return;

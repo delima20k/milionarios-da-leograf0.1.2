@@ -35,23 +35,22 @@ test('15 jogos iguais aos comprovantes, sem duplicatas e total de R$ 1.260', () 
     for (const jogo of jogos) assert.equal(new Set(jogo).size, 15);
     assert.equal(valorTotalAposta, 1260);
 });
-test('24 concursos consecutivos; pausa entre o 12º e o 13º', () => {
+test('24 concursos consecutivos de 3805 a 3828', () => {
     assert.equal(concursos.length, 24);
-    concursos.forEach((c, i) => { assert.equal(c.concurso, 3768 + i); assert.equal(c.numero, i + 1); });
-    assert.equal(concursos[0].data, '21/08/2026');
-    assert.equal(concursos[11].data, '03/09/2026');
-    assert.equal(concursos[12].data, '15/09/2026');
-    assert.equal(concursos[12].especial, true);
-    assert.equal(concursos[23].concurso, 3791);
-    assert.equal(concursos.filter(c => c.prevista).length, 11);
+    concursos.forEach((c, i) => { assert.equal(c.concurso, 3805 + i); assert.equal(c.numero, i + 1); });
+    assert.equal(concursos[0].data, '15/10/2026');
+    assert.equal(concursos[2].data, '18/10/2026');
+    assert.equal(concursos[10].data, '27/10/2026');
+    assert.equal(concursos[11].data, '28/10/2026');
+    assert.equal(concursos[23].concurso, 3828);
+    assert.equal(concursos[23].data, '11/11/2026');
+    assert.equal(concursos.filter(c => c.prevista).length, 13);
 });
-test('progresso fica em 12 durante a pausa e avança para 13 sem reiniciar', () => {
-    for (const dia of ['04', '08', '14']) {
-        atualizarResumoTeimosinha(Date.parse(`2026-09-${dia}T12:00:00-03:00`));
-        assert.match(elements.get('progressoTeimosinha').textContent, /12 de 24.*12 restantes.*Em pausa/);
-    }
-    atualizarResumoTeimosinha(Date.parse('2026-09-15T21:00:00-03:00'));
-    assert.match(elements.get('progressoTeimosinha').textContent, /13 de 24.*11 restantes/);
+test('progresso avança pelo calendário', () => {
+    atualizarResumoTeimosinha(Date.parse('2026-10-15T12:00:00-03:00'));
+    assert.match(elements.get('progressoTeimosinha').textContent, /0 de 24.*24 restantes/);
+    atualizarResumoTeimosinha(Date.parse('2026-10-27T21:00:00-03:00'));
+    assert.match(elements.get('progressoTeimosinha').textContent, /11 de 24.*13 restantes/);
     atualizarResumoTeimosinha(concursos[23].dateMs);
     assert.match(elements.get('progressoTeimosinha').textContent, /24 de 24.*0 restantes/);
 });
